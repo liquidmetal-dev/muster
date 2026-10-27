@@ -1,4 +1,27 @@
-// Package battery implements vmsource.Source over battery's poolmgrd.
+// Package battery implements vmsource.Source over battery's poolmgrd
+// (docs/adr/2026-10-27-battery-as-vm-source.md).
+//
+// RPC mapping, from design section 3:
+//
+//	Acquire            PoolAdmin.GetPool (heartbeat interval), then Lease.ClaimVM
+//	VM.KeepAlive       Lease.Heartbeat
+//	Release            Lease.ReleaseVM
+//	Leases             Lease.ListLeases, filtered to the configured namespace
+//	Events             Events.Subscribe for one pool
+//	VM.Exec            the configured vmsource.Execer (the flintlock client)
+//
+// Every call has a per-attempt timeout (Config.CallTimeout, default 10 s)
+// and at most Config.MaxAttempts attempts (default 3) with full-jitter
+// backoff. UNAVAILABLE and a per-attempt DEADLINE_EXCEEDED are retried on
+// every call; ABORTED is retried on ClaimVM only. RESOURCE_EXHAUSTED is
+// never retried and surfaces as vmsource.ErrExhausted; NOT_FOUND surfaces
+// as vmsource.ErrPoolNotFound or vmsource.ErrLeaseNotFound, except on
+// ReleaseVM where it means the lease is already gone.
+//
+// Battery events map as follows: VM_DELETED_DUE_TO_EXPIRY,
+// VM_DELETED_ON_POOL_DELETE and VM_DELETED_ON_HOST_DRAIN become
+// vmsource.EventVMLost, VM_EXPIRING_SOON becomes vmsource.EventVMExpiring,
+// and every other type is dropped.
 package battery
 
 import (
