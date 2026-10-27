@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/liquidmetal-dev/muster/actions/workflows/ci.yml/badge.svg)](https://github.com/liquidmetal-dev/muster/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/liquidmetal-dev/muster.svg)](https://pkg.go.dev/github.com/liquidmetal-dev/muster)
-[![Go Version](https://img.shields.io/badge/go-1.27-00ADD8?logo=go)](go.mod)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/liquidmetal-dev/muster?logo=go)](go.mod)
 [![License](https://img.shields.io/github/license/liquidmetal-dev/muster)](LICENSE)
 
 **muster** runs each GitHub Actions job in a fresh microVM. It takes a pre-booted VM from a
