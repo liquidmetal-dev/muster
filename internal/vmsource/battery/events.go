@@ -45,14 +45,19 @@ func (s *Source) readEvents(ctx context.Context, pool string, req *poolmgrv1alph
 	defer close(out)
 	bo := newBackoff(500*time.Millisecond, 30*time.Second)
 	var lastID int64
+	var err error
 	for {
-		before := lastID
-		err := s.drain(ctx, stream, &lastID, out)
-		if ctx.Err() != nil {
-			return
-		}
-		if lastID > before {
-			bo.reset() // the stream delivered something, so the outage is over
+		// stream is nil when the last Subscribe failed; err then holds its
+		// error and the loop goes straight to the transient check.
+		if stream != nil {
+			before := lastID
+			err = s.drain(ctx, stream, &lastID, out)
+			if ctx.Err() != nil {
+				return
+			}
+			if lastID > before {
+				bo.reset() // the stream delivered something, so the outage is over
+			}
 		}
 		if !transientStreamError(err) {
 			s.cfg.Logger.Error("battery: event subscription failed permanently", "pool", pool, "err", err)
@@ -64,23 +69,12 @@ func (s *Source) readEvents(ctx context.Context, pool string, req *poolmgrv1alph
 			return
 		}
 		stream, err = s.events.Subscribe(ctx, req)
-		if err != nil {
-			// Loop again: drain returns the error immediately for a nil stream.
-			stream = nil
-			if !transientStreamError(err) {
-				s.cfg.Logger.Error("battery: event subscription failed permanently", "pool", pool, "err", err)
-				return
-			}
-		}
 	}
 }
 
 // drain forwards events from stream until it fails. It skips events with
 // an id at or below *lastID (the outbox replay after a resubscribe).
 func (s *Source) drain(ctx context.Context, stream grpc.ServerStreamingClient[poolmgrv1alpha1.Event], lastID *int64, out chan<- vmsource.Event) error {
-	if stream == nil {
-		return status.Error(codes.Unavailable, "no stream")
-	}
 	for {
 		raw, err := stream.Recv()
 		if err != nil {
