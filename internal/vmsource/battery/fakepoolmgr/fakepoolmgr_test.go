@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -392,4 +393,80 @@ func TestDeleteVMEmits(t *testing.T) {
 	}
 	_, err = c.lease.Heartbeat(context.Background(), &poolmgrv1alpha1.HeartbeatRequest{LeaseId: resp.GetLeaseId()})
 	wantCode(t, err, codes.NotFound)
+}
+
+func TestSubscribeReplaysLargeOutbox(t *testing.T) {
+	fake, c := start(t)
+	fake.AddPool(pool("a", "ns", 1))
+	const n = 200
+	for i := range n {
+		fake.Emit(&poolmgrv1alpha1.Event{PoolName: "a", PoolNamespace: "ns", VmUid: fmt.Sprintf("vm-%03d", i), Type: poolmgrv1alpha1.EventType_VM_DELETED_DUE_TO_EXPIRY})
+	}
+	stream := subscribe(t, c, ref("a", "ns"))
+	for i := range n {
+		ev, err := recvWithin(t, stream, 2*time.Second)
+		if err != nil {
+			t.Fatalf("Recv %d: %v", i, err)
+		}
+		if ev.GetId() != int64(i+1) {
+			t.Fatalf("event %d has id %d", i, ev.GetId())
+		}
+	}
+	// The server must still accept calls and live events after a large replay.
+	claim(t, c, "a", "ns", "req-1")
+	if ev, err := recvWithin(t, stream, 2*time.Second); err != nil || ev.GetType() != poolmgrv1alpha1.EventType_VM_CLAIMED {
+		t.Fatalf("live event after replay = %v, %v", ev, err)
+	}
+}
+
+func TestEmitDoesNotBlockOnSlowSubscriber(t *testing.T) {
+	fake, c := start(t)
+	fake.AddPool(pool("a", "ns", 1))
+	stream := subscribe(t, c, ref("a", "ns"))
+	waitSubscribers(t, fake, 1)
+	done := make(chan struct{})
+	go func() {
+		for i := range 300 {
+			fake.Emit(&poolmgrv1alpha1.Event{PoolName: "a", PoolNamespace: "ns", VmUid: fmt.Sprintf("vm-%03d", i), Type: poolmgrv1alpha1.EventType_VM_EXPIRING_SOON})
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Emit blocked on a subscriber that is not reading")
+	}
+	for i := range 300 {
+		if _, err := recvWithin(t, stream, 2*time.Second); err != nil {
+			t.Fatalf("Recv %d: %v", i, err)
+		}
+	}
+}
+
+func TestPoolsWithSameNameInOtherNamespaces(t *testing.T) {
+	fake, c := start(t)
+	fake.AddPool(pool("a", "ns1", 1))
+	fake.AddPool(pool("a", "ns2", 1))
+	one := claim(t, c, "a", "ns1", "req-1")
+	two := claim(t, c, "a", "ns2", "req-2")
+	if one.GetVmUid() == two.GetVmUid() {
+		t.Fatalf("both namespaces handed out vm %q", one.GetVmUid())
+	}
+	if n := len(fake.Leases()); n != 2 {
+		t.Fatalf("Leases() = %d, want 2", n)
+	}
+}
+
+func TestFailNextStacks(t *testing.T) {
+	fake, c := start(t)
+	fake.AddPool(pool("a", "ns", 1))
+	fake.FailNext("ClaimVM", codes.Unavailable)
+	fake.FailNext("ClaimVM", codes.Unavailable)
+	for i := range 2 {
+		_, err := c.lease.ClaimVM(context.Background(), &poolmgrv1alpha1.ClaimVMRequest{Pool: ref("a", "ns"), RequestId: "req-1"})
+		if status.Code(err) != codes.Unavailable {
+			t.Fatalf("call %d: code %v, want Unavailable", i, status.Code(err))
+		}
+	}
+	claim(t, c, "a", "ns", "req-1")
 }

@@ -54,19 +54,35 @@ func TestRetryBudgetExhausted(t *testing.T) {
 	seedPool(fake, "a", 1)
 	src := newTestSource(t, fake, func(c *Config) { c.MaxAttempts = 2 })
 	fake.FailNext("ClaimVM", codes.Unavailable)
-	// FailNext is one-shot, so re-arm it from the second call on.
-	go func() {
-		for fake.CallCount("ClaimVM") < 1 {
-			time.Sleep(time.Millisecond)
-		}
-		fake.FailNext("ClaimVM", codes.Unavailable)
-	}()
+	fake.FailNext("ClaimVM", codes.Unavailable)
 	_, err := src.Acquire(context.Background(), "a", "req-1")
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("Acquire error = %v, want Unavailable after the budget", err)
 	}
 	if n := fake.CallCount("ClaimVM"); n != 2 {
 		t.Fatalf("CallCount(ClaimVM) = %d, want 2", n)
+	}
+}
+
+func TestDefaultMaxAttemptsIsThree(t *testing.T) {
+	fake := fakepoolmgr.New()
+	seedPool(fake, "a", 1)
+	src := newTestSource(t, fake, nil) // MaxAttempts left at zero: the default applies
+	for range 2 {
+		fake.FailNext("ClaimVM", codes.Unavailable)
+	}
+	acquire(t, src, "a", "req-1") // third attempt succeeds
+	if n := fake.CallCount("ClaimVM"); n != 3 {
+		t.Fatalf("CallCount(ClaimVM) = %d, want 3", n)
+	}
+	for range 3 {
+		fake.FailNext("ClaimVM", codes.Unavailable)
+	}
+	if _, err := src.Acquire(context.Background(), "a", "req-2"); status.Code(err) != codes.Unavailable {
+		t.Fatalf("Acquire error = %v, want Unavailable after three failed attempts", err)
+	}
+	if n := fake.CallCount("ClaimVM"); n != 6 {
+		t.Fatalf("CallCount(ClaimVM) = %d, want 6 (three more attempts, no fourth)", n)
 	}
 }
 

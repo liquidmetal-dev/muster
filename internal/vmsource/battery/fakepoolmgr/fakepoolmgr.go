@@ -74,10 +74,32 @@ type lease struct {
 	expiresAt time.Time
 }
 
+// subscriber is one open Subscribe stream. Events queue in a slice so
+// neither a large replay nor a slow reader can block emit or the server.
 type subscriber struct {
 	filter *poolKey
-	ch     chan *poolmgrv1alpha1.Event
+	mu     sync.Mutex
+	queue  []*poolmgrv1alpha1.Event
+	notify chan struct{} // capacity 1; a token means the queue is non-empty
 	drop   chan struct{}
+}
+
+func (sub *subscriber) push(ev *poolmgrv1alpha1.Event) {
+	sub.mu.Lock()
+	sub.queue = append(sub.queue, ev)
+	sub.mu.Unlock()
+	select {
+	case sub.notify <- struct{}{}:
+	default:
+	}
+}
+
+func (sub *subscriber) pop() []*poolmgrv1alpha1.Event {
+	sub.mu.Lock()
+	defer sub.mu.Unlock()
+	out := sub.queue
+	sub.queue = nil
+	return out
 }
 
 // Server is the fake. Use New.
@@ -93,7 +115,7 @@ type Server struct {
 	nextEventID map[poolKey]int64
 	subs        map[*subscriber]struct{}
 	calls       []Call
-	failNext    map[string]codes.Code
+	failNext    map[string][]codes.Code
 	loseNext    map[string]bool
 	stallNext   map[string]time.Duration
 	authHeader  string
@@ -111,7 +133,7 @@ func New() *Server {
 		byRequest:   map[string]string{},
 		nextEventID: map[poolKey]int64{},
 		subs:        map[*subscriber]struct{}{},
-		failNext:    map[string]codes.Code{},
+		failNext:    map[string][]codes.Code{},
 		loseNext:    map[string]bool{},
 		stallNext:   map[string]time.Duration{},
 	}
@@ -175,17 +197,18 @@ func (s *Server) AddPool(p Pool) {
 		return
 	}
 	for i := range p.Capacity {
-		uid := fmt.Sprintf("%s-vm-%d", p.Name, i+1)
+		uid := fmt.Sprintf("%s-%s-vm-%d", p.Namespace, p.Name, i+1)
 		s.vms[uid] = &vm{uid: uid, pool: key}
 	}
 }
 
 // FailNext makes the next call of method fail with code before its
-// handler runs.
+// handler runs. Repeated calls stack: each injected failure is consumed by
+// one call, in order.
 func (s *Server) FailNext(method string, code codes.Code) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.failNext[method] = code
+	s.failNext[method] = append(s.failNext[method], code)
 }
 
 // LoseNext makes the next call of method run its handler and then return
@@ -292,8 +315,12 @@ func (s *Server) before(ctx context.Context, method string, req proto.Message) (
 	s.mu.Lock()
 	s.calls = append(s.calls, Call{Method: method, Req: req})
 	auth := s.authHeader
-	code, fail := s.failNext[method]
-	delete(s.failNext, method)
+	var code codes.Code
+	fail := len(s.failNext[method]) > 0
+	if fail {
+		code = s.failNext[method][0]
+		s.failNext[method] = s.failNext[method][1:]
+	}
 	stall, stalled := s.stallNext[method]
 	delete(s.stallNext, method)
 	lose = s.loseNext[method]
@@ -485,7 +512,7 @@ func (s *Server) emit(ev *poolmgrv1alpha1.Event) {
 	s.outbox = append(s.outbox, ev)
 	for sub := range s.subs {
 		if sub.filter == nil || *sub.filter == key {
-			sub.ch <- ev
+			sub.push(ev)
 		}
 	}
 }
@@ -493,14 +520,16 @@ func (s *Server) emit(ev *poolmgrv1alpha1.Event) {
 // Subscribe implements poolmgrv1alpha1.EventsServer: replay the outbox,
 // then stream live events until the client goes away or DropSubscribers.
 func (s *Server) Subscribe(req *poolmgrv1alpha1.SubscribeRequest, stream grpc.ServerStreamingServer[poolmgrv1alpha1.Event]) error {
-	sub := &subscriber{ch: make(chan *poolmgrv1alpha1.Event, 64), drop: make(chan struct{})}
+	sub := &subscriber{notify: make(chan struct{}, 1), drop: make(chan struct{})}
 	if ref := req.GetPool(); ref != nil {
 		sub.filter = &poolKey{ref.GetNamespace(), ref.GetName()}
 	}
+	// Snapshot the outbox and register in one critical section so no live
+	// event is missed or duplicated between the replay and the live phase.
 	s.mu.Lock()
 	for _, ev := range s.outbox {
 		if sub.filter == nil || *sub.filter == (poolKey{ev.GetPoolNamespace(), ev.GetPoolName()}) {
-			sub.ch <- ev
+			sub.queue = append(sub.queue, ev)
 		}
 	}
 	s.subs[sub] = struct{}{}
@@ -511,11 +540,18 @@ func (s *Server) Subscribe(req *poolmgrv1alpha1.SubscribeRequest, stream grpc.Se
 		s.mu.Unlock()
 	}()
 	for {
-		select {
-		case ev := <-sub.ch:
+		for _, ev := range sub.pop() {
+			select {
+			case <-sub.drop:
+				return status.Error(codes.Unavailable, "fakepoolmgr: subscribers dropped")
+			default:
+			}
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
+		}
+		select {
+		case <-sub.notify:
 		case <-sub.drop:
 			return status.Error(codes.Unavailable, "fakepoolmgr: subscribers dropped")
 		case <-stream.Context().Done():
