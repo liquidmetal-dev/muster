@@ -43,11 +43,13 @@ func (i Info) String() string {
 // Get returns the version of the running binary. Linker-set values win field
 // by field; the rest comes from the build information in the binary.
 func Get() Info {
-	return build(Version, Commit, Date, debug.ReadBuildInfo)
+	return build(Info{Version: Version, Commit: Commit, Date: Date}, debug.ReadBuildInfo)
 }
 
-func build(version, commit, date string, read func() (*debug.BuildInfo, bool)) Info {
-	info := Info{Version: version, Commit: commit, Date: date}
+// build fills the empty fields of overrides from the build information that
+// read returns.
+func build(overrides Info, read func() (*debug.BuildInfo, bool)) Info {
+	info := overrides
 	bi, ok := read()
 	if !ok || bi == nil {
 		bi = &debug.BuildInfo{}
