@@ -23,7 +23,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *showVersion {
-		_, _ = fmt.Fprintf(stdout, "musterd %s\n", version.Get())
+		if _, err := fmt.Fprintf(stdout, "musterd %s\n", version.Get()); err != nil {
+			_, _ = fmt.Fprintf(stderr, "musterd: %v\n", err)
+			return 1
+		}
 		return 0
 	}
 	fs.Usage()

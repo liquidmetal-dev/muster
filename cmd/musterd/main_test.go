@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -45,5 +46,20 @@ func TestRunUnknownFlag(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "flag provided but not defined: -bogus") {
 		t.Fatalf("stderr = %q, want the unknown flag error", errb.String())
+	}
+}
+
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, errors.New("pipe closed") }
+
+func TestRunVersionWriteError(t *testing.T) {
+	var errb bytes.Buffer
+	code := run([]string{"-version"}, failWriter{}, &errb)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "pipe closed") {
+		t.Fatalf("stderr = %q, want the write error", errb.String())
 	}
 }
