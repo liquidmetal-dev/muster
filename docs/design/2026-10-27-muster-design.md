@@ -179,7 +179,7 @@ GitHub credential (GH-3).
       "microvm_template": {
         "vcpu": 2,
         "memoryInMb": 4096,
-        "kernel": {"image": "ghcr.io/liquidmetal-dev/muster-kernel:6.1-amd64", "filename": "vmlinux"},
+        "kernel": {"image": "ghcr.io/liquidmetal-dev/firecracker-kernel:6.1-20260929-1349", "filename": "boot/vmlinux"},
         "rootVolume": {"id": "root", "source": {"containerSource": "ghcr.io/liquidmetal-dev/muster-runner:minimal-latest"}},
         "interfaces": [{"deviceId": "eth0", "type": "TAP"}]
       }
@@ -193,7 +193,7 @@ replaces `github.app` with `github.token_file`.
 
 ## 8. Images and kernel
 
-Sources live under `images/runner/` and `images/kernel/`.
+Sources live under `images/runner/`.
 
 - `minimal`: a Dockerfile from `ubuntu:24.04` with systemd as init, guest-agent from the
   liquidmetal apt repository, the Actions runner tarball pinned by a per-architecture
@@ -203,9 +203,8 @@ Sources live under `images/runner/` and `images/kernel/`.
 - `full`: `FROM ghcr.io/catthehacker/ubuntu:act-24.04` (pinned by digest) with the
   `minimal` layer applied on top, plus a documented delta from GitHub's hosted runners.
 - `e2e`: `minimal` with `/opt/actions-runner/run.sh` replaced by a stub (section 10).
-- Kernel: a committed `.config` per architecture on the 6.1 LTS line, built in CI and
-  published `FROM scratch` with `vmlinux` at the root. The spike in KRN-2 decides whether
-  the published 5.10 kernels can serve instead.
+- Kernel: the published `ghcr.io/liquidmetal-dev/firecracker-kernel` image at the immutable
+  tag that `docs/adr/2026-10-27-guest-kernel.md` names. Muster builds no kernel.
 - CI: an amd64/arm64 build matrix on GitHub-hosted runners, a weekly check for new
   `actions/runner` releases, and a smoke boot test under systemd.
 
@@ -265,8 +264,8 @@ is reachable and GitHub authentication works.
 
 ## 12. Risks
 
-- Docker inside a Firecracker guest needs the right kernel configuration (cgroup v2,
-  overlayfs, bridge, veth, netfilter). The spike in KRN-2 settles this before image work.
+- The KRN-2 spike verified Docker on the published 6.1 Firecracker kernel on amd64
+  (`docs/adr/2026-10-27-guest-kernel.md`). arm64 and Cloud Hypervisor are not verified.
 - `catthehacker/ubuntu` is a community image. It is pinned by digest and the `minimal` path
   does not depend on it.
 - arm64 doubles image and kernel CI time. GitHub-hosted arm64 runners are free for public
@@ -281,6 +280,6 @@ is reachable and GitHub authentication works.
 - `v0.1.0`: first job end to end. musterd with the battery source, webhook and polling
   intake, count-based dispatch, sessions, startup reconciliation, metrics, the `minimal`
   image on amd64, the fake GitHub and the e2e suite, binaries and container, quick start.
-- `v0.2.0`: `full` image, arm64 images and kernel, gRPC API and `musterctl`, `.deb` and
-  `.rpm` packages, built-in webhook TLS.
+- `v0.2.0`: `full` image, arm64 images and an arm64 kernel from mikrolite-images, gRPC API
+  and `musterctl`, `.deb` and `.rpm` packages, built-in webhook TLS.
 - `v0.3.0`: the acceptance-tests suite.
