@@ -176,10 +176,13 @@ CONFIG_EROFS_FS_SECURITY=y
 CONFIG_EROFS_FS_ZIP=y
 ```
 
-A kernel on another line or architecture is sufficient for the checks when it matches the
-`fc-6.1-amd64` column above. Every `y` in that column is necessary. The options that are
-`n` there (`NFT_MASQ`, `NFT_REJECT`, `NF_TABLES_INET`, `NFT_FIB_IPV4`,
-`NETFILTER_XT_MATCH_COMMENT`) are not. A 5.10 kernel also needs `CONFIG_NFT_COUNTER=y`.
+The `fc-6.1-amd64` column above is the one configuration the checks passed on. The spike
+did not remove options one at a time, so it does not show which of them are necessary. A
+kernel on another line or architecture that matches that column is expected to pass, but
+only a boot through the same checks proves it. The options that are `n` in that column
+(`NFT_MASQ`, `NFT_REJECT`, `NF_TABLES_INET`, `NFT_FIB_IPV4`, `NETFILTER_XT_MATCH_COMMENT`)
+were not necessary for the checks. A 5.10 kernel probably also needs `CONFIG_NFT_COUNTER=y`.
+No build verified that.
 
 ## Consequences
 
