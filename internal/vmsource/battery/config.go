@@ -62,9 +62,10 @@ func (c Config) withDefaults() Config {
 	return c
 }
 
-// Validate reports a Config that cannot work. It runs on the config with
-// defaults applied.
+// Validate reports a Config that cannot work. Zero values that have a
+// default are accepted.
 func (c Config) Validate() error {
+	c = c.withDefaults()
 	if c.Addr == "" {
 		return errors.New("battery: addr is required")
 	}

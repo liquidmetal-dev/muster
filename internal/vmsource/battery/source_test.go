@@ -221,3 +221,19 @@ func fakeWithAuth(t *testing.T, token string) *fakepoolmgr.Server {
 	fake.RequireBasicAuth(token)
 	return fake
 }
+
+func TestValidateAcceptsZeroDefaults(t *testing.T) {
+	cfg := Config{Addr: "x:1", Namespace: "muster", TLS: tlsconfig.Client{Insecure: true}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() with zero timeout and attempts = %v, want nil (defaults apply)", err)
+	}
+}
+
+func TestReleaseTypedNilVM(t *testing.T) {
+	fake := fakepoolmgr.New()
+	src := newTestSource(t, fake, nil)
+	var vm *VM
+	if err := src.Release(context.Background(), vm); !errors.Is(err, ErrForeignVM) {
+		t.Fatalf("Release(typed nil) = %v, want ErrForeignVM", err)
+	}
+}

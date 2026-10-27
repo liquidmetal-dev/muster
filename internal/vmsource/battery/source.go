@@ -120,7 +120,7 @@ func (s *Source) Acquire(ctx context.Context, pool, requestID string) (vmsource.
 // treated as released, which makes a retry after a lost response succeed.
 func (s *Source) Release(ctx context.Context, v vmsource.VM) error {
 	bv, ok := v.(*VM)
-	if !ok || bv.source != s {
+	if !ok || bv == nil || bv.source != s {
 		return ErrForeignVM
 	}
 	err := s.call(ctx, "ReleaseVM", retryDefault, func(ctx context.Context) error {
