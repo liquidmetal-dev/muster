@@ -169,11 +169,14 @@ most one job.
 - **IMG-6** Image builds SHOULD be smoke-testable without flintlock (boot under systemd in a
   container or qemu; assert that guest-agent and dockerd start and `muster-runner --check`
   succeeds).
-- **KRN-1** The repository MUST build and publish `ghcr.io/liquidmetal-dev/muster-kernel`
-  for amd64 and arm64 from a current LTS line with a committed configuration that enables
-  what Docker needs (cgroup v2, overlayfs, bridge, veth, netfilter, nf_tables) plus the
-  Firecracker and Cloud Hypervisor guest requirements, laid out as flintlock expects
-  (`vmlinux` at the image root).
+- **KRN-1** Muster MUST provide a verified reference guest kernel for amd64 and arm64, for
+  Firecracker and for Cloud Hypervisor. Each one MUST be a kernel that
+  liquidmetal-dev/mikrolite-images publishes, pinned by its immutable tag. It MUST have the
+  options Docker needs (cgroup v2, overlayfs, bridge, veth, netfilter, nf_tables) and the
+  hypervisor's guest requirements built in, laid out as flintlock expects. Muster MUST NOT
+  build a kernel of its own. The ADR `docs/adr/2026-10-27-guest-kernel.md` records which
+  tags are verified. For a combination with no verified tag, the ADR MUST list the open
+  work and the issue that tracks it.
 - **KRN-2** A spike MUST first establish whether the published liquidmetal kernels already
   satisfy KRN-1. Its outcome MUST be recorded as an ADR.
 
