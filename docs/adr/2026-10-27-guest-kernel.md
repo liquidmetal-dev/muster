@@ -199,8 +199,10 @@ Open work, all in mikrolite-images:
 - The arm64 kernel for v0.2.0 is
   [mikrolite-images#41](https://github.com/liquidmetal-dev/mikrolite-images/issues/41),
   which must add the EROFS fragment that the arm64 base config lacks.
-- Cloud Hypervisor stays unsupported until a published kernel has netfilter and bridge
-  enabled and a boot test passes on it.
+- The Cloud Hypervisor kernel is
+  [mikrolite-images#42](https://github.com/liquidmetal-dev/mikrolite-images/issues/42),
+  which must enable netfilter and bridge. Cloud Hypervisor stays unsupported until that
+  kernel is published and a boot test passes on it.
 - The published 5.10 kernel is not usable for Docker, and no build has yet verified the
   probable fix `CONFIG_NFT_COUNTER=y`.
 - Firecracker publishes 6.18 guest configs, and 6.18 is the next line to check when
