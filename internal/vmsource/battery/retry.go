@@ -39,6 +39,9 @@ func (b *backoff) delay() time.Duration {
 	return d
 }
 
+// reset restarts the schedule from base.
+func (b *backoff) reset() { b.next = b.base }
+
 // sleepCtx waits d or until ctx ends.
 func sleepCtx(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
