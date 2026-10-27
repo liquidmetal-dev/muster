@@ -189,15 +189,22 @@ No build verified that.
 For muster:
 
 - muster has no kernel sources and no kernel CI, and the design drops `images/kernel/`.
-- The `minimal` image keeps Docker's default iptables backend, because the native nftables backend was not tested.
-- A workload that needs Docker IPv6 or conntrack flushes needs a new mikrolite-images build with `CONFIG_NF_TABLES_IPV6=y` and `CONFIG_NF_CT_NETLINK=y`.
+- The `minimal` image keeps Docker's default iptables backend, because the native nftables
+  backend was not tested.
+- A workload that needs Docker IPv6 or conntrack flushes needs a new mikrolite-images build
+  with `CONFIG_NF_TABLES_IPV6=y` and `CONFIG_NF_CT_NETLINK=y`.
 
 Open work, all in mikrolite-images:
 
-- The arm64 kernel for v0.2.0 is [mikrolite-images#41](https://github.com/liquidmetal-dev/mikrolite-images/issues/41), which must add the EROFS fragment that the arm64 base config lacks.
-- Cloud Hypervisor stays unsupported until a published kernel has netfilter and bridge enabled and a boot test passes on it.
-- The published 5.10 kernel is not usable for Docker, and no build has yet verified the probable fix `CONFIG_NFT_COUNTER=y`.
-- Firecracker publishes 6.18 guest configs, and 6.18 is the next line to check when mikrolite-images builds it.
+- The arm64 kernel for v0.2.0 is
+  [mikrolite-images#41](https://github.com/liquidmetal-dev/mikrolite-images/issues/41),
+  which must add the EROFS fragment that the arm64 base config lacks.
+- Cloud Hypervisor stays unsupported until a published kernel has netfilter and bridge
+  enabled and a boot test passes on it.
+- The published 5.10 kernel is not usable for Docker, and no build has yet verified the
+  probable fix `CONFIG_NFT_COUNTER=y`.
+- Firecracker publishes 6.18 guest configs, and 6.18 is the next line to check when
+  mikrolite-images builds it.
 
 ## How to reproduce
 

@@ -4,7 +4,8 @@
 - Date: 2026-10-27
 - Requirements: [2026-10-27-muster-requirements.md](2026-10-27-muster-requirements.md)
 - ADRs: [battery as the VM source](../adr/2026-10-27-battery-as-vm-source.md),
-  [stateless musterd](../adr/2026-10-27-stateless-musterd.md)
+  [stateless musterd](../adr/2026-10-27-stateless-musterd.md),
+  [guest kernel](../adr/2026-10-27-guest-kernel.md)
 
 ## 1. Overview
 
@@ -268,7 +269,7 @@ is reachable and GitHub authentication works.
   (`docs/adr/2026-10-27-guest-kernel.md`). arm64 and Cloud Hypervisor are not verified.
 - `catthehacker/ubuntu` is a community image. It is pinned by digest and the `minimal` path
   does not depend on it.
-- arm64 doubles image and kernel CI time. GitHub-hosted arm64 runners are free for public
+- arm64 doubles image CI time. GitHub-hosted arm64 runners are free for public
   repositories.
 - A muster restart drops exec streams. Adoption covers it, but end detection for adopted
   sessions depends on GitHub state and is slower.
