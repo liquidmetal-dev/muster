@@ -37,6 +37,7 @@ func validate(cfg *Config) error {
 	validateFlintlock(cfg, &errs)
 	validateDefaults(cfg, &errs)
 	validatePools(cfg, &errs)
+	validateCrossCutting(cfg, &errs)
 	return errs.err()
 }
 

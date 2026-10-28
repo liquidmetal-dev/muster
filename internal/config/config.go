@@ -148,6 +148,16 @@ type Scope struct {
 	RunnerGroup string `json:"runner_group,omitempty"`
 }
 
+// Covers reports whether owner/name repo is within the scope. Owners and
+// names compare case-insensitively, as GitHub logins do.
+func (s Scope) Covers(repo string) bool {
+	if s.Org != "" {
+		owner, _, _ := strings.Cut(repo, "/")
+		return strings.EqualFold(owner, s.Org)
+	}
+	return strings.EqualFold(repo, s.Repo)
+}
+
 // Owner returns the organization or the owner part of Repo.
 func (s Scope) Owner() string {
 	if s.Org != "" {

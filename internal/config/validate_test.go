@@ -255,3 +255,58 @@ func TestValidatePoolsSizeOneDefaultsMaxConcurrent(t *testing.T) {
 		t.Fatalf("MaxConcurrent = %d, want 2", cfg.Pools[0].MaxConcurrent)
 	}
 }
+
+func TestValidateCrossCutting(t *testing.T) {
+	runRuleCases(t, []ruleCase{
+		{"no intake", func(m map[string]any) {
+			del(m, "listen")
+			del(m, "github.webhook_secret_env")
+			set(m, "github.poll.enabled", false)
+		}, "at least one intake must be enabled: set listen or github.poll.enabled"},
+		{"poll only ok", func(m map[string]any) { del(m, "listen"); del(m, "github.webhook_secret_env") }, ""},
+		{"listen only ok", func(m map[string]any) { set(m, "github.poll.enabled", false) }, ""},
+		{"both intakes ok", nil, ""},
+		{"polled repo outside scopes", func(m map[string]any) { set(m, "github.poll.repos", []any{"acme/tools"}) }, `github.poll.repos[0]: "acme/tools" is not within any pool scope`},
+		{"polled repo within repo scope", func(m map[string]any) {
+			pool(m, 0)["scope"] = map[string]any{"repo": "liquidmetal-dev/muster"}
+			set(m, "github.poll.repos", []any{"LiquidMetal-Dev/Muster"})
+		}, ""},
+		{"owner mismatch across pools", func(m map[string]any) {
+			secondPool(m, "acme-pool")["scope"] = map[string]any{"org": "acme"}
+		}, `pools["acme-pool"].scope: owner "acme" does not match owner "liquidmetal-dev" of pools["ubuntu-small"]`},
+		{"owner differs by case ok", func(m map[string]any) {
+			secondPool(m, "second")["scope"] = map[string]any{"org": "LiquidMetal-Dev"}
+		}, ""},
+		{"two pools same owner ok", func(m map[string]any) {
+			secondPool(m, "second")["scope"] = map[string]any{"org": "liquidmetal-dev"}
+		}, ""},
+		{"owner mismatch ignored on token path", func(m map[string]any) {
+			del(m, "github.app")
+			set(m, "github.token_env", "T")
+			secondPool(m, "acme-pool")["scope"] = map[string]any{"org": "acme"}
+		}, ""},
+		{"polled repo owner mismatch", func(m map[string]any) {
+			secondPool(m, "acme-pool")["scope"] = map[string]any{"org": "acme"}
+			set(m, "github.poll.repos", []any{"acme/x"})
+		}, `github.poll.repos[0]: owner "acme" does not match owner "liquidmetal-dev" of pools["ubuntu-small"]`},
+	})
+}
+
+func TestScopeCovers(t *testing.T) {
+	tests := []struct {
+		s    config.Scope
+		repo string
+		want bool
+	}{
+		{config.Scope{Org: "a"}, "a/x", true},
+		{config.Scope{Org: "a"}, "A/x", true},
+		{config.Scope{Org: "a"}, "b/x", false},
+		{config.Scope{Repo: "a/x"}, "A/X", true},
+		{config.Scope{Repo: "a/x"}, "a/y", false},
+	}
+	for _, tt := range tests {
+		if got := tt.s.Covers(tt.repo); got != tt.want {
+			t.Errorf("%+v.Covers(%q) = %v, want %v", tt.s, tt.repo, got, tt.want)
+		}
+	}
+}
