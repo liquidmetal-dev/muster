@@ -54,6 +54,7 @@ and exits. The exec stream's exit code is muster's primary end-of-session signal
 | `internal/api` | gRPC service implementations |
 | `internal/musterctl` | CLI commands and output |
 | `internal/metrics`, `internal/server` | Prometheus registry, `/healthz`, `/readyz`, webhook mux |
+| `internal/clock` | `Clock` interface with real and manual implementations; timers in fakes and sessions |
 | `internal/fakegithub` | fake GitHub server for unit and e2e tests (section 10) |
 | `test/e2e` | build-tagged suite against real flintlockd and poolmgrd with the fake GitHub |
 
