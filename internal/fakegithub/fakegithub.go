@@ -83,21 +83,25 @@ type Server struct {
 	mux   *http.ServeMux
 	auth  map[string]authReq
 
-	mu         sync.Mutex
-	nextID     int64 // shared by repos, runners, runs and jobs
-	orgs       map[string]*orgState
-	repos      map[string]*repoState
-	runners    map[int64]*runnerState
-	jobs       map[int64]*jobState
-	runs       map[int64]int64 // run id -> job id
-	deliveries []Delivery
-	tokens     map[string]time.Time // installation token -> expiry
-	requests   []Request
-	failNext   map[string][]Fault
-	stallNext  map[string][]time.Duration
+	mu            sync.Mutex
+	nextID        int64 // shared by repos, runners, runs and jobs
+	orgs          map[string]*orgState
+	repos         map[string]*repoState
+	runners       map[int64]*runnerState
+	jobs          map[int64]*jobState
+	runs          map[int64]int64 // run id -> job id
+	deliveries    []Delivery
+	defaults      Behavior
+	nextBehaviors []Behavior
+	tokens        map[string]time.Time // installation token -> expiry
+	requests      []Request
+	failNext      map[string][]Fault
+	stallNext     map[string][]time.Duration
 
 	closeOnce sync.Once
 	done      chan struct{}
+	wakeCh    chan struct{}
+	wg        sync.WaitGroup
 }
 
 // New returns a fake with the given configuration.
@@ -122,8 +126,12 @@ func New(cfg Config) *Server {
 		failNext:  map[string][]Fault{},
 		stallNext: map[string][]time.Duration{},
 		done:      make(chan struct{}),
+		wakeCh:    make(chan struct{}, 1),
+		defaults:  packageDefaults,
 	}
 	s.registerRoutes()
+	s.wg.Add(1)
+	go s.run()
 	return s
 }
 
@@ -142,9 +150,10 @@ func (s *Server) Start(tb testing.TB) string {
 	return srv.URL
 }
 
-// Close stops the background work of the fake. It is idempotent.
+// Close stops the lifecycle scheduler and waits for it. It is idempotent.
 func (s *Server) Close() {
 	s.closeOnce.Do(func() { close(s.done) })
+	s.wg.Wait()
 }
 
 // Requests returns a copy of the request log in arrival order.

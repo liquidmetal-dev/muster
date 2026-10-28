@@ -85,10 +85,11 @@ func (s *Server) Redeliver(deliveryID string) error {
 	return nil
 }
 
-// deliver builds, signs, sends and records a workflow_job event for job.
-func (s *Server) deliver(action string, job Job) Delivery {
+// deliver builds, signs, sends and records a workflow_job event for the job
+// state js, a copy taken at the moment of the transition.
+func (s *Server) deliver(action string, js jobState) Delivery {
 	s.mu.Lock()
-	payload := s.payloadLocked(action, job)
+	payload := s.payloadLocked(action, &js)
 	url, secret := s.cfg.WebhookURL, s.cfg.WebhookSecret
 	s.mu.Unlock()
 
@@ -103,7 +104,7 @@ func (s *Server) deliver(action string, job Job) Delivery {
 	h.Set("X-GitHub-Hook-Installation-Target-Type", "integration")
 	h.Set("X-GitHub-Hook-Installation-Target-ID", strconv.FormatInt(s.cfg.AppID, 10))
 	h.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
-	d := Delivery{ID: h.Get("X-GitHub-Delivery"), Event: "workflow_job", Action: action, JobID: job.ID, Header: h, Body: body}
+	d := Delivery{ID: h.Get("X-GitHub-Delivery"), Event: "workflow_job", Action: action, JobID: js.ID, Header: h, Body: body}
 	return s.send(url, d)
 }
 
@@ -138,15 +139,14 @@ func post(url string, d Delivery) (int, error) {
 	return resp.StatusCode, nil
 }
 
-// payloadLocked builds the workflow_job event for job as GitHub sends it.
-func (s *Server) payloadLocked(action string, job Job) *github.WorkflowJobEvent {
-	js := s.jobs[job.ID]
+// payloadLocked builds the workflow_job event for js as GitHub sends it.
+func (s *Server) payloadLocked(action string, js *jobState) *github.WorkflowJobEvent {
 	ev := &github.WorkflowJobEvent{
 		Action:       new(action),
 		WorkflowJob:  toGitHubJob(js),
 		Installation: &github.Installation{ID: new(s.cfg.InstallationID)},
 	}
-	if repo, ok := s.repos[job.Repo]; ok {
+	if repo, ok := s.repos[js.Repo]; ok {
 		ev.Repo = &github.Repository{
 			ID:       new(repo.id),
 			Name:     new(repo.name),

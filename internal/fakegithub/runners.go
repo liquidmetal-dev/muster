@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v93/github"
 )
@@ -55,6 +56,10 @@ type repoState struct {
 
 type runnerState struct {
 	Runner
+	behavior     Behavior
+	onlineAt     time.Time // pending online transition, zero when none
+	completeAt   time.Time // pending completion, zero when none
+	deregisterAt time.Time // pending removal, zero when none
 }
 
 const (
@@ -202,6 +207,7 @@ func (s *Server) handleJITConfig(w http.ResponseWriter, r *http.Request, _ authI
 			return
 		}
 	}
+	b := s.takeBehaviorLocked()
 	rs := &runnerState{Runner: Runner{
 		ID:            s.nextIDLocked(),
 		Name:          req.Name,
@@ -209,9 +215,13 @@ func (s *Server) handleJITConfig(w http.ResponseWriter, r *http.Request, _ authI
 		RunnerGroupID: req.RunnerGroupID,
 		Labels:        append([]string(nil), req.Labels...),
 		Status:        statusOffline,
-	}}
+	}, behavior: b}
+	if !b.NeverRegister {
+		rs.onlineAt = s.clock.Now().Add(b.OnlineAfter)
+	}
 	s.runners[rs.ID] = rs
-	blob := JITConfig{RunnerID: rs.ID, RunnerName: rs.Name, SleepSeconds: 5, ExitCode: 0}
+	s.wake()
+	blob := JITConfig{RunnerID: rs.ID, RunnerName: rs.Name, SleepSeconds: b.RunFor.Seconds(), ExitCode: b.ExitCode}
 	writeJSON(w, http.StatusCreated, &github.JITRunnerConfig{
 		Runner:           toGitHubRunner(rs),
 		EncodedJITConfig: new(blob.Encode()),
@@ -270,6 +280,7 @@ func (s *Server) handleDeleteRunner(w http.ResponseWriter, r *http.Request, _ au
 		return
 	}
 	delete(s.runners, id)
+	s.wake()
 	w.WriteHeader(http.StatusNoContent)
 }
 

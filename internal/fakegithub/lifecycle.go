@@ -1,0 +1,268 @@
+package fakegithub
+
+import (
+	"sort"
+	"strings"
+	"testing"
+	"time"
+)
+
+// Behavior controls how a runner behaves after its JIT configuration is
+// issued. Zero durations take the defaults set with SetDefaultBehavior, or
+// the package defaults: online after 1s, run for 5s, deregister 500ms after
+// completion.
+type Behavior struct {
+	// NeverRegister keeps the runner offline forever.
+	NeverRegister bool
+	// HoldIdle brings the runner online but never gives it a job.
+	HoldIdle bool
+	// OnlineAfter is the delay from JIT config to online.
+	OnlineAfter time.Duration
+	// RunFor is the job duration and the SleepSeconds in the encoded config.
+	RunFor time.Duration
+	// DeregisterAfter is the delay from completed to removal from the list.
+	DeregisterAfter time.Duration
+	// ExitCode is encoded in the JIT config; non-zero gives conclusion "failure".
+	ExitCode int
+}
+
+var packageDefaults = Behavior{OnlineAfter: time.Second, RunFor: 5 * time.Second, DeregisterAfter: 500 * time.Millisecond}
+
+// withDefaults fills zero durations of b from d.
+func (b Behavior) withDefaults(d Behavior) Behavior {
+	if b.OnlineAfter == 0 {
+		b.OnlineAfter = d.OnlineAfter
+	}
+	if b.RunFor == 0 {
+		b.RunFor = d.RunFor
+	}
+	if b.DeregisterAfter == 0 {
+		b.DeregisterAfter = d.DeregisterAfter
+	}
+	return b
+}
+
+// SetDefaultBehavior sets the behavior of runners that no NextRunner call
+// covers. Zero durations keep the package defaults.
+func (s *Server) SetDefaultBehavior(b Behavior) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.defaults = b.withDefaults(packageDefaults)
+}
+
+// NextRunner queues a behavior for the next JIT configuration request.
+// Repeated calls are consumed in order.
+func (s *Server) NextRunner(b Behavior) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextBehaviors = append(s.nextBehaviors, b)
+}
+
+func (s *Server) takeBehaviorLocked() Behavior {
+	if len(s.nextBehaviors) == 0 {
+		return s.defaults
+	}
+	b := s.nextBehaviors[0]
+	s.nextBehaviors = s.nextBehaviors[1:]
+	return b.withDefaults(s.defaults)
+}
+
+// WaitFor polls cond every 5ms of wall-clock time until it returns true or
+// timeout passes, then fails the test.
+func (s *Server) WaitFor(tb testing.TB, timeout time.Duration, cond func() bool) {
+	tb.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if cond() {
+			return
+		}
+		if time.Now().After(deadline) {
+			tb.Fatalf("fakegithub: WaitFor: condition not met within %s", timeout)
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// wake tells the scheduler that state with a deadline changed.
+func (s *Server) wake() {
+	select {
+	case s.wakeCh <- struct{}{}:
+	default:
+	}
+}
+
+// run is the scheduler goroutine. It sleeps on the clock until the earliest
+// pending deadline or a wake, then applies every due transition.
+func (s *Server) run() {
+	defer s.wg.Done()
+	for {
+		s.mu.Lock()
+		deadline, pending := s.earliestLocked()
+		wait := deadline.Sub(s.clock.Now())
+		s.mu.Unlock()
+
+		var timerC <-chan time.Time
+		var stop func() bool
+		if pending {
+			t := s.clock.NewTimer(wait)
+			timerC, stop = t.C(), t.Stop
+		}
+		select {
+		case <-s.done:
+			if stop != nil {
+				stop()
+			}
+			return
+		case <-s.wakeCh:
+		case <-timerC:
+		}
+		if stop != nil {
+			stop()
+		}
+		s.step()
+	}
+}
+
+func (s *Server) earliestLocked() (time.Time, bool) {
+	var earliest time.Time
+	found := false
+	consider := func(t time.Time) {
+		if !t.IsZero() && (!found || t.Before(earliest)) {
+			earliest, found = t, true
+		}
+	}
+	for _, r := range s.runners {
+		consider(r.onlineAt)
+		consider(r.completeAt)
+		consider(r.deregisterAt)
+	}
+	return earliest, found
+}
+
+type pendingDelivery struct {
+	action string
+	job    jobState
+}
+
+// step applies every due transition and pairing under the mutex, then
+// delivers the resulting webhooks in order outside it.
+func (s *Server) step() {
+	s.mu.Lock()
+	out := s.advanceLocked()
+	s.mu.Unlock()
+	for _, d := range out {
+		s.deliver(d.action, d.job)
+	}
+}
+
+type dueEvent struct {
+	at     time.Time
+	runner *runnerState
+	kind   int // 0 online, 1 complete, 2 deregister
+}
+
+func (s *Server) advanceLocked() []pendingDelivery {
+	now := s.clock.Now()
+	var due []dueEvent
+	for _, r := range s.runners {
+		for kind, at := range []time.Time{r.onlineAt, r.completeAt, r.deregisterAt} {
+			if !at.IsZero() && !at.After(now) {
+				due = append(due, dueEvent{at: at, runner: r, kind: kind})
+			}
+		}
+	}
+	sort.Slice(due, func(i, j int) bool {
+		if due[i].at.Equal(due[j].at) {
+			return due[i].runner.ID < due[j].runner.ID
+		}
+		return due[i].at.Before(due[j].at)
+	})
+	var out []pendingDelivery
+	for _, ev := range due {
+		r := ev.runner
+		switch ev.kind {
+		case 0:
+			r.onlineAt = time.Time{}
+			r.Status = statusOnline
+		case 1:
+			r.completeAt = time.Time{}
+			if js, ok := s.jobs[r.JobID]; ok {
+				js.Status = jobCompleted
+				js.completedAt = now
+				js.Conclusion = "success"
+				if r.behavior.ExitCode != 0 {
+					js.Conclusion = "failure"
+				}
+				out = append(out, pendingDelivery{action: jobCompleted, job: *js})
+			}
+			r.Busy, r.JobID, r.Finished = false, 0, true
+			r.deregisterAt = now.Add(r.behavior.DeregisterAfter)
+		case 2:
+			delete(s.runners, r.ID)
+		}
+	}
+	return append(out, s.pairLocked(now)...)
+}
+
+// pairLocked gives every eligible online runner, in id order, the oldest
+// announced queued job its scope and labels cover.
+func (s *Server) pairLocked(now time.Time) []pendingDelivery {
+	runners := make([]*runnerState, 0, len(s.runners))
+	for _, r := range s.runners {
+		if r.Status == statusOnline && !r.Busy && !r.Finished && !r.behavior.HoldIdle {
+			runners = append(runners, r)
+		}
+	}
+	sort.Slice(runners, func(i, j int) bool { return runners[i].ID < runners[j].ID })
+	jobs := make([]*jobState, 0, len(s.jobs))
+	for _, j := range s.jobs {
+		if j.Status == jobQueued && j.announced {
+			jobs = append(jobs, j)
+		}
+	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
+
+	var out []pendingDelivery
+	for _, r := range runners {
+		for i, j := range jobs {
+			if !covers(r, j) {
+				continue
+			}
+			j.Status = jobInProgress
+			j.startedAt = now
+			j.RunnerID, j.RunnerName, j.runnerGroupID = r.ID, r.Name, r.RunnerGroupID
+			r.Busy, r.JobID = true, j.ID
+			r.completeAt = now.Add(r.behavior.RunFor)
+			out = append(out, pendingDelivery{action: jobInProgress, job: *j})
+			jobs = append(jobs[:i], jobs[i+1:]...)
+			break
+		}
+	}
+	return out
+}
+
+// covers reports whether runner r may run job j: its scope covers the
+// job's repository and its labels are a superset of the job's labels.
+func covers(r *runnerState, j *jobState) bool {
+	owner, _, _ := strings.Cut(j.Repo, "/")
+	if r.Scope.Org != "" && r.Scope.Org != owner {
+		return false
+	}
+	if r.Scope.Repo != "" && r.Scope.Repo != j.Repo {
+		return false
+	}
+	for _, want := range j.Labels {
+		found := false
+		for _, have := range r.Labels {
+			if have == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}

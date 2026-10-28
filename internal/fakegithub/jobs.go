@@ -28,10 +28,11 @@ type jobState struct {
 	Job
 	// announced is set once the queued delivery returned. Pairing ignores a
 	// job that is not announced yet, so in_progress never overtakes queued.
-	announced   bool
-	createdAt   time.Time
-	startedAt   time.Time
-	completedAt time.Time
+	announced     bool
+	runnerGroupID int64
+	createdAt     time.Time
+	startedAt     time.Time
+	completedAt   time.Time
 }
 
 const (
@@ -62,9 +63,10 @@ func (s *Server) QueueJob(repo string, labels []string) (Job, error) {
 	s.jobs[js.ID] = js
 	s.runs[js.RunID] = js.ID
 	snap := js.snapshot()
+	copyJS := *js
 	s.mu.Unlock()
 
-	s.deliver(jobQueued, snap)
+	s.deliver(jobQueued, copyJS)
 
 	s.mu.Lock()
 	js.announced = true
@@ -159,6 +161,7 @@ func toGitHubJob(j *jobState) *github.WorkflowJob {
 	if j.RunnerName != "" {
 		wj.RunnerID = new(j.RunnerID)
 		wj.RunnerName = new(j.RunnerName)
+		wj.RunnerGroupID = new(j.runnerGroupID)
 	}
 	if !j.startedAt.IsZero() {
 		wj.StartedAt = &github.Timestamp{Time: j.startedAt}
@@ -175,7 +178,3 @@ func optString(v string) *string {
 	}
 	return new(v)
 }
-
-// wake tells the lifecycle scheduler that state changed. Task 6 gives it a
-// body; until then nothing waits on it.
-func (s *Server) wake() {}
