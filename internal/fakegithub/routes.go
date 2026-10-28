@@ -212,6 +212,8 @@ func paginate(r *http.Request, total int) (lo, hi int, link string) {
 	if per > maxPerPage {
 		per = maxPerPage
 	}
+	// Cap page so the index arithmetic cannot overflow on a hostile value.
+	page = min(page, total/per+2)
 	lo = min((page-1)*per, total)
 	hi = min(lo+per, total)
 	last := max((total+per-1)/per, 1)

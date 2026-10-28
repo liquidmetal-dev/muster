@@ -1,6 +1,7 @@
 package fakegithub_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -257,4 +258,18 @@ func TestDeleteRunnerUnknownScope(t *testing.T) {
 	wantStatus(t, err, http.StatusNotFound)
 	_, err = e.client.Actions.RemoveRunner(ctx(), "nope", "nope", 1)
 	wantStatus(t, err, http.StatusNotFound)
+}
+
+func TestListRunnersHugePageDoesNotPanic(t *testing.T) {
+	e := start(t)
+	seed(e)
+	orgJIT(t, e, "muster-a", "x")
+	resp := rawGet(t, e.url+"/orgs/liquidmetal-dev/actions/runners?page=9223372036854775807&per_page=100", "Bearer "+e.token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var list github.Runners
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil || len(list.Runners) != 0 || list.TotalCount != 1 {
+		t.Fatalf("list %+v err %v", list, err)
+	}
 }
