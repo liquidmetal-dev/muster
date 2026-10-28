@@ -112,7 +112,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			sw.Header()[k] = v
 		}
 		writeError(sw, f.Status, f.Message)
-		s.logOutcome(slot, sw.status, "none")
+		s.logOutcome(slot, sw.status, kindNone)
 		return
 	}
 
@@ -133,14 +133,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) authorized(pattern string, a authInfo, w http.ResponseWriter) bool {
 	switch s.auth[pattern] {
 	case authJWT:
-		if a.kind != "jwt" {
+		if a.kind != kindJWT {
 			writeError(w, http.StatusUnauthorized, "A JSON web token could not be decoded")
 			return false
 		}
 	case authUser:
 		switch a.kind {
-		case "pat":
-		case "installation":
+		case kindPAT:
+		case kindInstallation:
 			writeError(w, http.StatusForbidden, "Resource not accessible by integration")
 			return false
 		default:
@@ -148,7 +148,7 @@ func (s *Server) authorized(pattern string, a authInfo, w http.ResponseWriter) b
 			return false
 		}
 	default:
-		if a.kind != "installation" && a.kind != "pat" {
+		if a.kind != kindInstallation && a.kind != kindPAT {
 			writeError(w, http.StatusUnauthorized, "Bad credentials")
 			return false
 		}

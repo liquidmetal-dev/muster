@@ -140,9 +140,9 @@ func (s *Server) earliestLocked() (time.Time, bool) {
 		}
 	}
 	for _, r := range s.runners {
-		consider(r.onlineAt)
-		consider(r.completeAt)
-		consider(r.deregisterAt)
+		for _, t := range allTransitions {
+			consider(r.deadline(t))
+		}
 	}
 	return earliest, found
 }
@@ -163,10 +163,33 @@ func (s *Server) step() {
 	}
 }
 
+// transition is one step of the runner lifecycle.
+type transition int
+
+const (
+	transitionOnline transition = iota
+	transitionComplete
+	transitionDeregister
+)
+
+// deadline returns when the transition t is due for r, zero when not pending.
+func (r *runnerState) deadline(t transition) time.Time {
+	switch t {
+	case transitionOnline:
+		return r.onlineAt
+	case transitionComplete:
+		return r.completeAt
+	default:
+		return r.deregisterAt
+	}
+}
+
+var allTransitions = []transition{transitionOnline, transitionComplete, transitionDeregister}
+
 type dueEvent struct {
 	at     time.Time
 	runner *runnerState
-	kind   int // 0 online, 1 complete, 2 deregister
+	kind   transition
 }
 
 // advanceLocked applies every transition whose deadline has passed, each at
@@ -191,7 +214,8 @@ func (s *Server) nextDueLocked(now time.Time) (dueEvent, bool) {
 	var best dueEvent
 	found := false
 	for _, r := range s.runners {
-		for kind, at := range []time.Time{r.onlineAt, r.completeAt, r.deregisterAt} {
+		for _, kind := range allTransitions {
+			at := r.deadline(kind)
 			if at.IsZero() || at.After(now) {
 				continue
 			}
@@ -209,10 +233,10 @@ func (s *Server) applyLocked(ev dueEvent) []pendingDelivery {
 	r, at := ev.runner, ev.at
 	var out []pendingDelivery
 	switch ev.kind {
-	case 0:
+	case transitionOnline:
 		r.onlineAt = time.Time{}
 		r.Status = statusOnline
-	case 1:
+	case transitionComplete:
 		r.completeAt = time.Time{}
 		if js, ok := s.jobs[r.JobID]; ok {
 			js.Status = jobCompleted
@@ -225,7 +249,7 @@ func (s *Server) applyLocked(ev dueEvent) []pendingDelivery {
 		}
 		r.Busy, r.JobID, r.Finished = false, 0, true
 		r.deregisterAt = at.Add(r.behavior.DeregisterAfter)
-	case 2:
+	case transitionDeregister:
 		delete(s.runners, r.ID)
 	}
 	return append(out, s.pairLocked(at)...)

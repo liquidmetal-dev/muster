@@ -241,9 +241,9 @@ func (s *Server) logArrival(r Request) int {
 }
 
 // logOutcome fills in the status and auth kind of the request at slot.
-func (s *Server) logOutcome(slot, status int, auth string) {
+func (s *Server) logOutcome(slot, status int, auth authKind) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.requests[slot].Status = status
-	s.requests[slot].Auth = auth
+	s.requests[slot].Auth = string(auth)
 }

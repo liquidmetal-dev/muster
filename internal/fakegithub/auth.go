@@ -22,38 +22,50 @@ const (
 	jwtIatSkew     = time.Minute
 )
 
+// authKind classifies the credential a request carried. Its string form is
+// what Request.Auth records.
+type authKind string
+
+const (
+	kindJWT          authKind = "jwt"
+	kindInstallation authKind = "installation"
+	kindPAT          authKind = "pat"
+	kindNone         authKind = "none"
+	kindInvalid      authKind = "invalid"
+)
+
 // authInfo is the outcome of authenticating one request.
 type authInfo struct {
-	kind  string // "jwt", "installation", "pat", "none", "invalid"
-	login string // PAT owner, for "pat"
+	kind  authKind
+	login string // PAT owner, for kindPAT
 }
 
 // authenticate classifies the Authorization header of r.
 func (s *Server) authenticate(r *http.Request) authInfo {
 	h := r.Header.Get("Authorization")
 	if h == "" {
-		return authInfo{kind: "none"}
+		return authInfo{kind: kindNone}
 	}
 	scheme, token, ok := strings.Cut(h, " ")
 	if !ok {
-		return authInfo{kind: "invalid"}
+		return authInfo{kind: kindInvalid}
 	}
 	token = strings.TrimSpace(token)
 	switch strings.ToLower(scheme) {
 	case "bearer", "token":
 	default:
-		return authInfo{kind: "invalid"}
+		return authInfo{kind: kindInvalid}
 	}
 	if s.installationTokenValid(token) {
-		return authInfo{kind: "installation"}
+		return authInfo{kind: kindInstallation}
 	}
 	if login, ok := s.cfg.PATs[token]; ok {
-		return authInfo{kind: "pat", login: login}
+		return authInfo{kind: kindPAT, login: login}
 	}
 	if err := s.verifyJWT(token); err == nil {
-		return authInfo{kind: "jwt"}
+		return authInfo{kind: kindJWT}
 	}
-	return authInfo{kind: "invalid"}
+	return authInfo{kind: kindInvalid}
 }
 
 func (s *Server) installationTokenValid(token string) bool {

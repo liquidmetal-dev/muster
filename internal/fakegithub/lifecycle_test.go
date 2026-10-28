@@ -360,7 +360,7 @@ type advancingClock struct {
 func (c *advancingClock) NewTimer(d time.Duration) clock.Timer {
 	if d > 0 {
 		c.hits++
-		c.Manual.Advance(d)
+		c.Advance(d)
 	}
 	return c.Manual.NewTimer(d)
 }
