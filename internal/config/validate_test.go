@@ -202,6 +202,9 @@ func TestValidatePools(t *testing.T) {
 		{"scope neither", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{} }, pp + ".scope: exactly one of org or repo"},
 		{"scope repo ok", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{"repo": "liquidmetal-dev/muster"} }, ""},
 		{"scope repo bad", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{"repo": "muster"} }, pp + ".scope.repo: must be owner/name"},
+		{"scope repo with space", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{"repo": "a b/c"} }, pp + ".scope.repo: must be owner/name"},
+		{"scope org with slash", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{"org": "foo/bar"} }, pp + `.scope.org: must be an owner name without "/" or whitespace`},
+		{"scope org with space", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{"org": "foo bar"} }, pp + `.scope.org: must be an owner name without "/" or whitespace`},
 		{"runner_group with repo", func(m map[string]any) {
 			pool(m, 0)["scope"] = map[string]any{"repo": "liquidmetal-dev/muster", "runner_group": "g"}
 		}, pp + ".scope.runner_group: only valid with org"},

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // MinPollInterval protects GitHub's rate limit.
@@ -186,8 +187,14 @@ func validateAddr(path, addr string, errs *errorList) {
 }
 
 // isOwnerName reports whether s has the form owner/name with both parts
-// non-empty and no further slash.
+// valid owner-style names.
 func isOwnerName(s string) bool {
 	owner, name, ok := strings.Cut(s, "/")
-	return ok && owner != "" && name != "" && !strings.Contains(name, "/")
+	return ok && isOwnerPart(owner) && isOwnerPart(name)
+}
+
+// isOwnerPart reports whether s can be a GitHub owner or repository name:
+// non-empty, no "/", no whitespace.
+func isOwnerPart(s string) bool {
+	return s != "" && !strings.Contains(s, "/") && strings.IndexFunc(s, unicode.IsSpace) < 0
 }

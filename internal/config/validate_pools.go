@@ -57,6 +57,9 @@ func validateScope(path string, s Scope, errs *errorList) {
 		errs.add(path, "exactly one of org or repo must be set")
 		return
 	}
+	if s.Org != "" && !isOwnerPart(s.Org) {
+		errs.add(path+".org", `must be an owner name without "/" or whitespace`)
+	}
 	if s.Repo != "" && !isOwnerName(s.Repo) {
 		errs.add(path+".repo", "must be owner/name")
 	}
