@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -9,8 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-
-	"github.com/liquidmetal-dev/muster/internal/tlsconfig"
 )
 
 // Load reads the file at path with Parse, then resolves every secret and
@@ -37,56 +36,57 @@ func resolve(cfg *Config) error {
 	var errs errorList
 	gh := &cfg.GitHub
 	if gh.TokenFile != "" || gh.TokenEnv != "" {
-		s, err := readSecret("github.token_file", gh.TokenFile, "github.token_env", gh.TokenEnv)
-		if err != nil {
-			errs.errs = append(errs.errs, err)
-		}
-		gh.Token = s
+		resolveSecret(&errs, &gh.Token, "github.token_file", gh.TokenFile, "github.token_env", gh.TokenEnv)
 	}
 	if gh.WebhookSecretFile != "" || gh.WebhookSecretEnv != "" {
-		s, err := readSecret("github.webhook_secret_file", gh.WebhookSecretFile, "github.webhook_secret_env", gh.WebhookSecretEnv)
-		if err != nil {
-			errs.errs = append(errs.errs, err)
-		}
-		gh.WebhookSecret = s
+		resolveSecret(&errs, &gh.WebhookSecret, "github.webhook_secret_file", gh.WebhookSecretFile, "github.webhook_secret_env", gh.WebhookSecretEnv)
 	}
 	if gh.App != nil {
-		s, err := readSecret("github.app.private_key_file", gh.App.PrivateKeyFile, "github.app.private_key_env", gh.App.PrivateKeyEnv)
-		switch {
-		case err != nil:
-			errs.errs = append(errs.errs, err)
-		case parseRSAPrivateKey(s.Value()) != nil:
-			path := "github.app.private_key_file"
-			if gh.App.PrivateKeyFile == "" {
-				path = "github.app.private_key_env"
-			}
+		path := resolveSecret(&errs, &gh.App.PrivateKey, "github.app.private_key_file", gh.App.PrivateKeyFile, "github.app.private_key_env", gh.App.PrivateKeyEnv)
+		if gh.App.PrivateKey.IsSet() && parseRSAPrivateKey(gh.App.PrivateKey.Value()) != nil {
 			errs.add(path, "not a PEM-encoded RSA private key")
 		}
-		gh.App.PrivateKey = s
 	}
 
 	if cfg.Listen != nil && cfg.Listen.TLS != nil {
-		probeServer("listen.tls", *cfg.Listen.TLS, &errs)
+		probeTLS(&errs, "listen.tls", cfg.Listen.TLS)
 	}
 	if cfg.API != nil {
-		probeServer("api.tls", cfg.API.TLS, &errs)
+		probeTLS(&errs, "api.tls", cfg.API.TLS)
 	}
-	probeClient("battery.tls", cfg.Battery.TLS, &errs)
-	probeClient("flintlock.tls", cfg.Flintlock.TLS, &errs)
+	probeTLS(&errs, "battery.tls", cfg.Battery.TLS)
+	probeTLS(&errs, "flintlock.tls", cfg.Flintlock.TLS)
 	for name, host := range cfg.Flintlock.Hosts {
-		probeClient("flintlock.hosts["+strconv.Quote(name)+"].tls", host.TLS, &errs)
+		probeTLS(&errs, "flintlock.hosts["+strconv.Quote(name)+"].tls", host.TLS)
 	}
 	return errs.err()
 }
 
-func probeServer(path string, s tlsconfig.Server, errs *errorList) {
-	if _, err := s.TLSConfig(); err != nil {
-		errs.addErr(path, err)
+// resolveSecret reads the secret named by file or env into dst and
+// records a failure at the path of the source that was set. It returns
+// that path.
+func resolveSecret(errs *errorList, dst *Secret, filePath, file, envPath, env string) string {
+	path := filePath
+	if file == "" {
+		path = envPath
 	}
+	s, err := readSecret(file, env)
+	if err != nil {
+		errs.addErr(path, err)
+		return path
+	}
+	*dst = s
+	return path
 }
 
-func probeClient(path string, c tlsconfig.Client, errs *errorList) {
-	if _, err := c.TLSConfig(); err != nil {
+// tlsBuilder is what tlsconfig.Client and tlsconfig.Server share.
+type tlsBuilder interface {
+	TLSConfig() (*tls.Config, error)
+}
+
+// probeTLS builds the configuration once so bad files fail at startup.
+func probeTLS(errs *errorList, path string, b tlsBuilder) {
+	if _, err := b.TLSConfig(); err != nil {
 		errs.addErr(path, err)
 	}
 }

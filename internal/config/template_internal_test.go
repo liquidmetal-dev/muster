@@ -24,6 +24,7 @@ func TestDecodeTemplate(t *testing.T) {
 		{"id empty string", `{"id":"",` + tmplKernel + `,` + tmplRoot + `}`, "id: managed by muster"},
 		{"uid null", `{"uid":null,` + tmplKernel + `,` + tmplRoot + `}`, "uid: managed by muster"},
 		{"created_at null", `{"created_at":null,` + tmplKernel + `,` + tmplRoot + `}`, "created_at: managed by muster"},
+		{"two managed keys report id first", `{"uid":"u","id":"x",` + tmplKernel + `,` + tmplRoot + `}`, "id: managed by muster"},
 		{"namespace managed", `{"namespace":"x",` + tmplKernel + `,` + tmplRoot + `}`, "namespace: managed by muster"},
 		{"uid managed", `{"uid":"x",` + tmplKernel + `,` + tmplRoot + `}`, "uid: managed by muster"},
 		{"createdAt managed", `{"createdAt":"2026-01-01T00:00:00Z",` + tmplKernel + `,` + tmplRoot + `}`, "created_at: managed by muster"},

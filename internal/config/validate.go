@@ -27,19 +27,18 @@ const (
 	msgDNSLabel = "must be a lowercase DNS label of at most 63 characters"
 )
 
-// validate runs every static rule and returns the joined failures.
-func validate(cfg *Config) error {
-	var errs errorList
-	validateListen(cfg, &errs)
-	validateAPI(cfg, &errs)
-	validateAddr("metrics_addr", cfg.MetricsAddr, &errs)
-	validateGitHub(cfg, &errs)
-	validateBattery(cfg, &errs)
-	validateFlintlock(cfg, &errs)
-	validateDefaults(cfg, &errs)
-	validatePools(cfg, &errs)
-	validateCrossCutting(cfg, &errs)
-	return errs.err()
+// validate runs every static rule, recording failures in errs. It does
+// not change cfg.
+func validate(cfg *Config, errs *errorList) {
+	validateListen(cfg, errs)
+	validateAPI(cfg, errs)
+	validateAddr("metrics_addr", cfg.MetricsAddr, errs)
+	validateGitHub(cfg, errs)
+	validateBattery(cfg, errs)
+	validateFlintlock(cfg, errs)
+	validateDefaults(cfg, errs)
+	validatePools(cfg, errs)
+	validateCrossCutting(cfg, errs)
 }
 
 func validateListen(cfg *Config, errs *errorList) {
@@ -68,8 +67,6 @@ func validateGitHub(cfg *Config, errs *errorList) {
 	gh := &cfg.GitHub
 	if u, err := url.Parse(gh.APIBaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		errs.add("github.api_base_url", "must be an http or https URL")
-	} else {
-		gh.APIBaseURL = strings.TrimSuffix(gh.APIBaseURL, "/")
 	}
 
 	hasToken := gh.TokenFile != "" || gh.TokenEnv != ""

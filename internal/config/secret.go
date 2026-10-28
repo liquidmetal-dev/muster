@@ -53,33 +53,31 @@ func (s Secret) MarshalJSON() ([]byte, error) {
 }
 
 // readSecret resolves a secret from file or from the environment variable
-// env. filePath and envPath are the JSON paths of the two settings, used
-// in errors. The value is trimmed of surrounding whitespace and must not
-// be empty. When both sources are set, file wins; the static rules reject
-// that case before readSecret runs.
-func readSecret(filePath, file, envPath, env string) (Secret, error) {
+// env. The value is trimmed of surrounding whitespace and must not be
+// empty. Errors carry no JSON path; the caller attaches it. When both
+// sources are set, file wins; the static rules reject that case before
+// readSecret runs.
+func readSecret(file, env string) (Secret, error) {
 	var raw []byte
-	path := filePath
 	switch {
 	case file != "":
 		b, err := os.ReadFile(filepath.Clean(file))
 		if err != nil {
-			return Secret{}, fmt.Errorf("%s: read %s: %w", filePath, file, err)
+			return Secret{}, fmt.Errorf("read %s: %w", file, err)
 		}
 		raw = b
 	case env != "":
-		path = envPath
 		v, ok := os.LookupEnv(env)
 		if !ok || v == "" {
-			return Secret{}, fmt.Errorf("%s: environment variable %s is not set", envPath, env)
+			return Secret{}, fmt.Errorf("environment variable %s is not set", env)
 		}
 		raw = []byte(v)
 	default:
-		return Secret{}, fmt.Errorf("%s: no source set", filePath)
+		return Secret{}, errors.New("no source set")
 	}
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
-		return Secret{}, errors.New(path + ": secret is empty")
+		return Secret{}, errors.New("secret is empty")
 	}
 	return Secret{value: raw}, nil
 }

@@ -44,11 +44,6 @@ func validatePools(cfg *Config, errs *errorList) {
 			errs.add(pp+".max_concurrent", "must be at least 1")
 		}
 		validateHosts(pp+".flintlock_hosts", p.FlintlockHosts, errs)
-		tpl, err := decodeTemplate(p.MicroVMTemplate)
-		if err != nil {
-			errs.addErr(pp+".microvm_template", err)
-		}
-		p.Template = tpl
 	}
 }
 

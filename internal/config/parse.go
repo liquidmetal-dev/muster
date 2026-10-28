@@ -42,7 +42,11 @@ func Parse(r io.Reader) (*Config, error) {
 		return nil, decodeError(err)
 	}
 	applyDefaults(&cfg)
-	if err := validate(&cfg); err != nil {
+	normalize(&cfg)
+	var errs errorList
+	decodeTemplates(&cfg, &errs)
+	validate(&cfg, &errs)
+	if err := errs.err(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
@@ -116,6 +120,11 @@ func applyDefaults(cfg *Config) {
 			p.MaxConcurrent = 2 * p.Size
 		}
 	}
+}
+
+// normalize canonicalises values before validation.
+func normalize(cfg *Config) {
+	cfg.GitHub.APIBaseURL = strings.TrimSuffix(cfg.GitHub.APIBaseURL, "/")
 }
 
 func defaultDuration(d *Duration, v time.Duration) {

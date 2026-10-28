@@ -176,4 +176,11 @@ func TestLoadCollectsResolveErrors(t *testing.T) {
 	_, err := config.Load(writeFixture(t, nil))
 	wantErr(t, err, "github.app.private_key_env")
 	wantErr(t, err, "github.webhook_secret_env")
+	var fe *config.FieldError
+	if !errors.As(err, &fe) {
+		t.Fatalf("resolve errors are not *FieldError values: %v", err)
+	}
+	if fe.Path == "" {
+		t.Fatalf("FieldError.Path is empty: %v", fe)
+	}
 }
