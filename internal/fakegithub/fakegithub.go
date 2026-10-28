@@ -156,7 +156,8 @@ func (s *Server) Close() {
 	s.wg.Wait()
 }
 
-// Requests returns a copy of the request log in arrival order.
+// Requests returns a copy of the request log in arrival order. A request
+// still in flight has Status 0.
 func (s *Server) Requests() []Request {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -216,8 +217,19 @@ func (s *Server) popStall(pattern string) (time.Duration, bool) {
 	return q[0], true
 }
 
-func (s *Server) logRequest(r Request) {
+// logArrival appends r to the log at arrival and returns its index, so the
+// log keeps arrival order even when a stalled request finishes late.
+func (s *Server) logArrival(r Request) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.requests = append(s.requests, r)
+	return len(s.requests) - 1
+}
+
+// logOutcome fills in the status and auth kind of the request at slot.
+func (s *Server) logOutcome(slot, status int, auth string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requests[slot].Status = status
+	s.requests[slot].Auth = auth
 }

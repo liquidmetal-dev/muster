@@ -89,8 +89,8 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// ServeHTTP runs the pipeline: strip /api/v3, stall, fault, rate-limit
-// headers, authenticate, dispatch, log.
+// ServeHTTP runs the pipeline: strip /api/v3, log the arrival, stall,
+// fault, rate-limit headers, authenticate, dispatch, fill in the outcome.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logged := Request{Method: r.Method, Path: r.URL.Path}
 	r = stripPrefix(r)
@@ -99,6 +99,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pattern = ""
 	}
 	logged.Pattern = pattern
+	slot := s.logArrival(logged)
 
 	if d, ok := s.popStall(pattern); ok {
 		time.Sleep(d)
@@ -111,14 +112,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			sw.Header()[k] = v
 		}
 		writeError(sw, f.Status, f.Message)
-		logged.Status = sw.status
-		logged.Auth = "none"
-		s.logRequest(logged)
+		s.logOutcome(slot, sw.status, "none")
 		return
 	}
 
 	a := s.authenticate(r)
-	logged.Auth = a.kind
 	switch {
 	case pattern == "":
 		writeError(sw, http.StatusNotFound, "Not Found")
@@ -127,8 +125,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.mux.ServeHTTP(sw, r.WithContext(context.WithValue(r.Context(), ctxKey{}, a)))
 	}
-	logged.Status = sw.status
-	s.logRequest(logged)
+	s.logOutcome(slot, sw.status, a.kind)
 }
 
 // authorized checks a against the route's requirement and writes the error

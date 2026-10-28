@@ -158,3 +158,24 @@ func TestAPIv3PaginationLinksKeepPrefix(t *testing.T) {
 		t.Fatalf("next %d, link %q", resp.NextPage, link)
 	}
 }
+
+func TestRequestsPreserveArrivalOrder(t *testing.T) {
+	e := start(t)
+	now := e.clock.Now()
+	c := jwtClient(t, e.url, signJWT(t, e.key, "123", now, now.Add(9*time.Minute)))
+	e.fake.Stall(fakegithub.PatternInstallation, 300*time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _, _ = c.Apps.GetInstallation(ctx(), installationID) // arrives first, finishes last
+	}()
+	time.Sleep(50 * time.Millisecond) // the stalled request has arrived and is sleeping
+	if _, _, err := c.Users.Get(ctx(), ""); err == nil {
+		t.Fatal("installation token on /user must be 403")
+	}
+	<-done
+	reqs := e.fake.Requests()
+	if len(reqs) != 3 || reqs[1].Pattern != fakegithub.PatternInstallation || reqs[1].Status != 200 || reqs[2].Pattern != fakegithub.PatternUser {
+		t.Fatalf("requests %+v", reqs)
+	}
+}
