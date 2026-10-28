@@ -3,7 +3,9 @@ package fakegithub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -62,11 +64,7 @@ func (s *Server) registerRoutes() {
 	s.route(PatternAccessToken, authJWT, s.handleAccessToken)
 	s.route(PatternInstallation, authJWT, s.handleInstallation)
 	s.route(PatternUser, authUser, s.handleUser)
-	// Task 4 replaces this with the real runner listing. Until orgs can be
-	// seeded, every organization is unknown.
-	s.route(PatternOrgRunners, authAPI, func(w http.ResponseWriter, _ *http.Request, _ authInfo) {
-		writeError(w, http.StatusNotFound, "Not Found")
-	})
+	s.registerRunnerRoutes()
 }
 
 // statusWriter records the status code written by a handler.
@@ -190,4 +188,64 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"message": message, "documentation_url": documentationURL})
+}
+
+const (
+	defaultPerPage = 30
+	maxPerPage     = 100
+)
+
+// paginate reads page and per_page from r and returns the half-open index
+// range [lo, hi) of a list of total items plus the Link header value, which
+// is empty when everything fits on one page.
+func paginate(r *http.Request, total int) (lo, hi int, link string) {
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	per, _ := strconv.Atoi(q.Get("per_page"))
+	if per < 1 {
+		per = defaultPerPage
+	}
+	if per > maxPerPage {
+		per = maxPerPage
+	}
+	lo = min((page-1)*per, total)
+	hi = min(lo+per, total)
+	last := max((total+per-1)/per, 1)
+	if last <= 1 {
+		return lo, hi, ""
+	}
+	pageURL := func(n int) string {
+		u := *r.URL
+		u.Scheme = "http"
+		if r.TLS != nil {
+			u.Scheme = "https"
+		}
+		u.Host = r.Host
+		v := url.Values{}
+		for k, vals := range q {
+			v[k] = vals
+		}
+		v.Set("page", strconv.Itoa(n))
+		v.Set("per_page", strconv.Itoa(per))
+		u.RawQuery = v.Encode()
+		return fmt.Sprintf("<%s>; rel=%q", u.String(), "")
+	}
+	rel := func(n int, name string) string { return strings.Replace(pageURL(n), `rel=""`, `rel="`+name+`"`, 1) }
+	var links []string
+	if page > 1 {
+		links = append(links, rel(min(page-1, last), "prev"), rel(1, "first"))
+	}
+	if page < last {
+		links = append(links, rel(page+1, "next"), rel(last, "last"))
+	}
+	return lo, hi, strings.Join(links, ", ")
+}
+
+func setLink(w http.ResponseWriter, link string) {
+	if link != "" {
+		w.Header().Set("Link", link)
+	}
 }

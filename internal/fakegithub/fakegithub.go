@@ -18,7 +18,8 @@
 // wall time must run the fake on clock.Real() and prove token refresh with
 // a short TokenTTL.
 //
-// Tests inject faults with FailNext and Stall, keyed by the route pattern
+// Tests seed the model with AddOrg, AddRepo and AddRunnerGroup; every org
+// gets a Default runner group with id 1. Tests inject faults with FailNext and Stall, keyed by the route pattern
 // constants, and observe traffic with Requests and RequestCount.
 package fakegithub
 
@@ -80,6 +81,10 @@ type Server struct {
 	auth  map[string]authReq
 
 	mu        sync.Mutex
+	nextID    int64 // shared by repos, runners, runs and jobs
+	orgs      map[string]*orgState
+	repos     map[string]*repoState
+	runners   map[int64]*runnerState
 	tokens    map[string]time.Time // installation token -> expiry
 	requests  []Request
 	failNext  map[string][]Fault
@@ -102,6 +107,9 @@ func New(cfg Config) *Server {
 		clock:     cfg.Clock,
 		mux:       http.NewServeMux(),
 		auth:      map[string]authReq{},
+		orgs:      map[string]*orgState{},
+		repos:     map[string]*repoState{},
+		runners:   map[int64]*runnerState{},
 		tokens:    map[string]time.Time{},
 		failNext:  map[string][]Fault{},
 		stallNext: map[string][]time.Duration{},
