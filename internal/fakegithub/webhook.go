@@ -44,12 +44,16 @@ type Delivery struct {
 	Err error
 }
 
-// Deliveries returns a copy of every delivery record in order.
+// Deliveries returns a deep copy of every delivery record in order.
 func (s *Server) Deliveries() []Delivery {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]Delivery, len(s.deliveries))
-	copy(out, s.deliveries)
+	for i, d := range s.deliveries {
+		d.Header = d.Header.Clone()
+		d.Body = append([]byte(nil), d.Body...)
+		out[i] = d
+	}
 	return out
 }
 

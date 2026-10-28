@@ -3,7 +3,9 @@ package fakegithub_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,5 +135,26 @@ func TestStallDelaysResponse(t *testing.T) {
 	}
 	if el := time.Since(began); el < 200*time.Millisecond {
 		t.Fatalf("elapsed %v, want >= 200ms", el)
+	}
+}
+
+func TestAPIv3PaginationLinksKeepPrefix(t *testing.T) {
+	e := start(t)
+	seed(e)
+	for i := range 4 {
+		orgJIT(t, e, fmt.Sprintf("muster-%d", i), "x")
+	}
+	c, err := github.NewClient(github.WithEnterpriseURLs(e.url, e.url), github.WithAuthToken(e.token))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, resp, err := c.Actions.ListOrganizationRunners(ctx(), org,
+		&github.ListRunnersOptions{ListOptions: github.ListOptions{Page: 1, PerPage: 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := resp.Header.Get("Link")
+	if resp.NextPage != 2 || !strings.Contains(link, e.url+"/api/v3/orgs/liquidmetal-dev/actions/runners?") {
+		t.Fatalf("next %d, link %q", resp.NextPage, link)
 	}
 }

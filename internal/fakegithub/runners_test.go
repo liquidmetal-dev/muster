@@ -207,13 +207,25 @@ func TestListRunnersPagination(t *testing.T) {
 	if len(l3.Runners) != 1 || r3.NextPage != 0 {
 		t.Fatalf("page3: %d runners, next %d", len(l3.Runners), r3.NextPage)
 	}
-	big, rb := page(1, 500)
-	if len(big.Runners) != 7 || rb.NextPage != 0 || rb.Header.Get("Link") != "" {
-		t.Fatalf("per_page 500: %d runners, next %d, link %q", len(big.Runners), rb.NextPage, rb.Header.Get("Link"))
-	}
 	past, rp := page(9, 3)
 	if len(past.Runners) != 0 || rp.NextPage != 0 {
 		t.Fatalf("page 9: %d runners, next %d", len(past.Runners), rp.NextPage)
+	}
+}
+
+func TestListRunnersPerPageClampedTo100(t *testing.T) {
+	e := start(t)
+	seed(e)
+	for i := range 101 {
+		orgJIT(t, e, fmt.Sprintf("muster-%03d", i), "x")
+	}
+	list, resp, err := e.client.Actions.ListOrganizationRunners(ctx(), org,
+		&github.ListRunnersOptions{ListOptions: github.ListOptions{Page: 1, PerPage: 500}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Runners) != 100 || list.TotalCount != 101 || resp.NextPage != 2 {
+		t.Fatalf("per_page 500: %d runners, total %d, next %d", len(list.Runners), list.TotalCount, resp.NextPage)
 	}
 }
 

@@ -196,3 +196,21 @@ func TestRepoWithoutOrgOmitsOrganization(t *testing.T) {
 		t.Fatalf("owner %+v", ev.GetRepo().GetOwner())
 	}
 }
+
+func TestDeliveriesReturnsCopies(t *testing.T) {
+	url, ch := hook(t)
+	e := start(t, withHook(url))
+	seed(e)
+	queue(t, e, orgRepo, "x")
+	first := recv(t, ch)
+	ds := e.fake.Deliveries()
+	ds[0].Header.Set("X-GitHub-Delivery", "tampered")
+	ds[0].Body[0] = '!'
+	if err := e.fake.Redeliver(ds[0].ID); err != nil {
+		t.Fatalf("Redeliver: %v", err)
+	}
+	second := recv(t, ch)
+	if second.req.Header.Get("X-GitHub-Delivery") != first.req.Header.Get("X-GitHub-Delivery") || !bytes.Equal(first.body, second.body) {
+		t.Fatal("mutating the Deliveries() result changed what Redeliver sent")
+	}
+}

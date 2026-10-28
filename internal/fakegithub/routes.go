@@ -47,6 +47,9 @@ type handlerFunc func(w http.ResponseWriter, r *http.Request, a authInfo)
 
 type ctxKey struct{}
 
+// prefixKey carries the stripped URL prefix so pagination links keep it.
+type prefixKey struct{}
+
 func authFrom(ctx context.Context) authInfo {
 	a, _ := ctx.Value(ctxKey{}).(authInfo)
 	return a
@@ -171,7 +174,7 @@ func stripPrefix(r *http.Request) *http.Request {
 		u.Path = "/"
 	}
 	r2.URL = &u
-	return r2
+	return r2.WithContext(context.WithValue(r.Context(), prefixKey{}, apiV3Prefix))
 }
 
 func (s *Server) writeRateHeaders(w http.ResponseWriter) {
@@ -225,6 +228,9 @@ func paginate(r *http.Request, total int) (lo, hi int, link string) {
 			u.Scheme = "https"
 		}
 		u.Host = r.Host
+		if prefix, _ := r.Context().Value(prefixKey{}).(string); prefix != "" {
+			u.Path = prefix + u.Path
+		}
 		v := url.Values{}
 		for k, vals := range q {
 			v[k] = vals

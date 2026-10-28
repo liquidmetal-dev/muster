@@ -162,47 +162,66 @@ type dueEvent struct {
 	kind   int // 0 online, 1 complete, 2 deregister
 }
 
+// advanceLocked applies every transition whose deadline has passed, each at
+// its own deadline and in deadline order, pairing runners with jobs after
+// each one. A clock jump past several deadlines therefore produces the same
+// sequence as advancing to each deadline in turn.
 func (s *Server) advanceLocked() []pendingDelivery {
 	now := s.clock.Now()
-	var due []dueEvent
-	for _, r := range s.runners {
-		for kind, at := range []time.Time{r.onlineAt, r.completeAt, r.deregisterAt} {
-			if !at.IsZero() && !at.After(now) {
-				due = append(due, dueEvent{at: at, runner: r, kind: kind})
-			}
-		}
-	}
-	sort.Slice(due, func(i, j int) bool {
-		if due[i].at.Equal(due[j].at) {
-			return due[i].runner.ID < due[j].runner.ID
-		}
-		return due[i].at.Before(due[j].at)
-	})
 	var out []pendingDelivery
-	for _, ev := range due {
-		r := ev.runner
-		switch ev.kind {
-		case 0:
-			r.onlineAt = time.Time{}
-			r.Status = statusOnline
-		case 1:
-			r.completeAt = time.Time{}
-			if js, ok := s.jobs[r.JobID]; ok {
-				js.Status = jobCompleted
-				js.completedAt = now
-				js.Conclusion = "success"
-				if r.behavior.ExitCode != 0 {
-					js.Conclusion = "failure"
-				}
-				out = append(out, pendingDelivery{action: jobCompleted, job: *js})
-			}
-			r.Busy, r.JobID, r.Finished = false, 0, true
-			r.deregisterAt = now.Add(r.behavior.DeregisterAfter)
-		case 2:
-			delete(s.runners, r.ID)
+	for {
+		ev, ok := s.nextDueLocked(now)
+		if !ok {
+			break
 		}
+		out = append(out, s.applyLocked(ev)...)
 	}
 	return append(out, s.pairLocked(now)...)
+}
+
+// nextDueLocked returns the earliest pending transition at or before now.
+func (s *Server) nextDueLocked(now time.Time) (dueEvent, bool) {
+	var best dueEvent
+	found := false
+	for _, r := range s.runners {
+		for kind, at := range []time.Time{r.onlineAt, r.completeAt, r.deregisterAt} {
+			if at.IsZero() || at.After(now) {
+				continue
+			}
+			ev := dueEvent{at: at, runner: r, kind: kind}
+			if !found || ev.at.Before(best.at) || (ev.at.Equal(best.at) && ev.runner.ID < best.runner.ID) {
+				best, found = ev, true
+			}
+		}
+	}
+	return best, found
+}
+
+// applyLocked performs one transition at its deadline and pairs afterwards.
+func (s *Server) applyLocked(ev dueEvent) []pendingDelivery {
+	r, at := ev.runner, ev.at
+	var out []pendingDelivery
+	switch ev.kind {
+	case 0:
+		r.onlineAt = time.Time{}
+		r.Status = statusOnline
+	case 1:
+		r.completeAt = time.Time{}
+		if js, ok := s.jobs[r.JobID]; ok {
+			js.Status = jobCompleted
+			js.completedAt = at
+			js.Conclusion = "success"
+			if r.behavior.ExitCode != 0 {
+				js.Conclusion = "failure"
+			}
+			out = append(out, pendingDelivery{action: jobCompleted, job: *js})
+		}
+		r.Busy, r.JobID, r.Finished = false, 0, true
+		r.deregisterAt = at.Add(r.behavior.DeregisterAfter)
+	case 2:
+		delete(s.runners, r.ID)
+	}
+	return append(out, s.pairLocked(at)...)
 }
 
 // pairLocked gives every eligible online runner, in id order, the oldest

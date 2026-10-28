@@ -329,3 +329,22 @@ func TestWaitForTimesOut(t *testing.T) {
 		t.Fatal("WaitFor did not call Fatalf on timeout")
 	}
 }
+
+func TestClockJumpCompletesJob(t *testing.T) {
+	e := start(t)
+	seed(e)
+	job := queue(t, e, orgRepo, "x")
+	id := orgJIT(t, e, "muster-a", "x").GetRunner().GetID()
+	// One jump past online (+1s) and completion (+6s): both must apply.
+	e.clock.Advance(6 * time.Second)
+	got := waitJobStatus(t, e, job.ID, "completed")
+	if got.Conclusion != "success" || got.RunnerName != "muster-a" {
+		t.Fatalf("job %+v", got)
+	}
+	if r := runnerByID(e, id); r.Busy || !r.Finished {
+		t.Fatalf("runner %+v", r)
+	}
+	waitActions(t, e, "[queued in_progress completed]")
+	e.clock.Advance(500 * time.Millisecond)
+	e.fake.WaitFor(t, waitTimeout, func() bool { return len(e.fake.Runners()) == 0 })
+}
