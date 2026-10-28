@@ -65,6 +65,7 @@ func (s *Server) registerRoutes() {
 	s.route(PatternInstallation, authJWT, s.handleInstallation)
 	s.route(PatternUser, authUser, s.handleUser)
 	s.registerRunnerRoutes()
+	s.registerJobRoutes()
 }
 
 // statusWriter records the status code written by a handler.

@@ -19,7 +19,10 @@
 // a short TokenTTL.
 //
 // Tests seed the model with AddOrg, AddRepo and AddRunnerGroup; every org
-// gets a Default runner group with id 1. Tests inject faults with FailNext and Stall, keyed by the route pattern
+// gets a Default runner group with id 1. QueueJob stores a queued job as its
+// own run and POSTs a signed workflow_job.queued event to the webhook URL.
+// Deliveries are synchronous, never retried, and always recorded, so
+// Deliveries doubles as the event log; Redeliver repeats one. Tests inject faults with FailNext and Stall, keyed by the route pattern
 // constants, and observe traffic with Requests and RequestCount.
 package fakegithub
 
@@ -80,15 +83,18 @@ type Server struct {
 	mux   *http.ServeMux
 	auth  map[string]authReq
 
-	mu        sync.Mutex
-	nextID    int64 // shared by repos, runners, runs and jobs
-	orgs      map[string]*orgState
-	repos     map[string]*repoState
-	runners   map[int64]*runnerState
-	tokens    map[string]time.Time // installation token -> expiry
-	requests  []Request
-	failNext  map[string][]Fault
-	stallNext map[string][]time.Duration
+	mu         sync.Mutex
+	nextID     int64 // shared by repos, runners, runs and jobs
+	orgs       map[string]*orgState
+	repos      map[string]*repoState
+	runners    map[int64]*runnerState
+	jobs       map[int64]*jobState
+	runs       map[int64]int64 // run id -> job id
+	deliveries []Delivery
+	tokens     map[string]time.Time // installation token -> expiry
+	requests   []Request
+	failNext   map[string][]Fault
+	stallNext  map[string][]time.Duration
 
 	closeOnce sync.Once
 	done      chan struct{}
@@ -110,6 +116,8 @@ func New(cfg Config) *Server {
 		orgs:      map[string]*orgState{},
 		repos:     map[string]*repoState{},
 		runners:   map[int64]*runnerState{},
+		jobs:      map[int64]*jobState{},
+		runs:      map[int64]int64{},
 		tokens:    map[string]time.Time{},
 		failNext:  map[string][]Fault{},
 		stallNext: map[string][]time.Duration{},
