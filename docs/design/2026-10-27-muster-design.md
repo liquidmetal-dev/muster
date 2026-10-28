@@ -182,7 +182,7 @@ GitHub credential (GH-3).
         "memoryInMb": 4096,
         "kernel": {"image": "ghcr.io/liquidmetal-dev/firecracker-kernel:6.1-20260929-1349", "filename": "boot/vmlinux"},
         "rootVolume": {"id": "root", "source": {"containerSource": "ghcr.io/liquidmetal-dev/muster-runner:minimal-latest"}},
-        "interfaces": [{"deviceId": "eth0", "type": "TAP"}]
+        "interfaces": [{"deviceId": "eth1", "type": "TAP"}]
       }
     }
   ]

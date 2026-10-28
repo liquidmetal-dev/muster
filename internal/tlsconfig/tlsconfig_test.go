@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"net"
+	"os"
 	"strings"
 	"testing"
 
@@ -159,4 +160,107 @@ func handshake(addr string, cfg *tls.Config) error {
 	}
 	_, err = tc.Read(make([]byte, 1))
 	return err
+}
+
+func TestClientKeyEnv(t *testing.T) {
+	certs := tlstest.Generate(t, "localhost")
+	pemBytes, err := os.ReadFile(certs.ClientKeyFile)
+	if err != nil {
+		t.Fatalf("read client key: %v", err)
+	}
+	t.Setenv("MUSTER_TEST_KEY", string(pemBytes))
+	cfg, err := tlsconfig.Client{CAFile: certs.CAFile, CertFile: certs.ClientCertFile, KeyEnv: "MUSTER_TEST_KEY"}.TLSConfig()
+	if err != nil {
+		t.Fatalf("TLSConfig() error = %v", err)
+	}
+	if len(cfg.Certificates) != 1 {
+		t.Fatalf("len(Certificates) = %d, want 1", len(cfg.Certificates))
+	}
+}
+
+func TestClientKeyEnvUnset(t *testing.T) {
+	certs := tlstest.Generate(t, "localhost")
+	_, err := tlsconfig.Client{CertFile: certs.ClientCertFile, KeyEnv: "MUSTER_TEST_UNSET"}.TLSConfig()
+	if err == nil || !strings.Contains(err.Error(), "MUSTER_TEST_UNSET") {
+		t.Fatalf("TLSConfig() error = %v, want one naming MUSTER_TEST_UNSET", err)
+	}
+}
+
+func TestClientValidateKeySources(t *testing.T) {
+	tests := []struct {
+		name string
+		c    tlsconfig.Client
+		want string
+	}{
+		{"two key sources", tlsconfig.Client{CertFile: "x", KeyFile: "y", KeyEnv: "Z"}, "exactly one"},
+		{"key_env without cert", tlsconfig.Client{KeyEnv: "Z"}, "cert_file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.c.Validate()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %v, want one containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestServerValidate(t *testing.T) {
+	tests := []struct {
+		name string
+		s    tlsconfig.Server
+		want string
+	}{
+		{"empty", tlsconfig.Server{}, "cert_file"},
+		{"insecure with cert", tlsconfig.Server{Insecure: true, CertFile: "x"}, "insecure"},
+		{"cert without key", tlsconfig.Server{CertFile: "x"}, "key_file"},
+		{"two key sources", tlsconfig.Server{CertFile: "x", KeyFile: "y", KeyEnv: "Z"}, "exactly one"},
+		{"client ca alone", tlsconfig.Server{ClientCAFile: "x"}, "cert_file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.s.Validate()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %v, want one containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestServerTLSConfigInsecure(t *testing.T) {
+	cfg, err := tlsconfig.Server{Insecure: true}.TLSConfig()
+	if err != nil || cfg != nil {
+		t.Fatalf("TLSConfig() = %v, %v; want nil, nil", cfg, err)
+	}
+}
+
+func TestServerTLSConfigMutual(t *testing.T) {
+	certs := tlstest.Generate(t, "localhost")
+	cfg, err := tlsconfig.Server{CertFile: certs.ServerCertFile, KeyFile: certs.ServerKeyFile, ClientCAFile: certs.CAFile}.TLSConfig()
+	if err != nil {
+		t.Fatalf("TLSConfig() error = %v", err)
+	}
+	if cfg.MinVersion != tls.VersionTLS12 {
+		t.Fatalf("MinVersion = %x, want %x", cfg.MinVersion, tls.VersionTLS12)
+	}
+	if cfg.ClientAuth != tls.RequireAndVerifyClientCert {
+		t.Fatalf("ClientAuth = %v, want RequireAndVerifyClientCert", cfg.ClientAuth)
+	}
+	if cfg.ClientCAs == nil {
+		t.Fatal("ClientCAs = nil, want a pool")
+	}
+	if len(cfg.Certificates) != 1 {
+		t.Fatalf("len(Certificates) = %d, want 1", len(cfg.Certificates))
+	}
+}
+
+func TestServerTLSConfigNoClientCA(t *testing.T) {
+	certs := tlstest.Generate(t, "localhost")
+	cfg, err := tlsconfig.Server{CertFile: certs.ServerCertFile, KeyFile: certs.ServerKeyFile}.TLSConfig()
+	if err != nil {
+		t.Fatalf("TLSConfig() error = %v", err)
+	}
+	if cfg.ClientAuth != tls.NoClientCert || cfg.ClientCAs != nil {
+		t.Fatalf("ClientAuth = %v, ClientCAs = %v; want NoClientCert and nil", cfg.ClientAuth, cfg.ClientCAs)
+	}
 }

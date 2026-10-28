@@ -1,0 +1,32 @@
+{
+  "listen": {"addr": ":8443", "tls": {"cert_file": "/etc/muster/tls.crt", "key_file": "/etc/muster/tls.key"}},
+  "api": {"addr": ":9443", "tls": {"insecure": true}},
+  "metrics_addr": ":9090",
+  "github": {
+    "api_base_url": "https://api.github.com",
+    "app": {"app_id": 123, "installation_id": 456, "private_key_file": "/etc/muster/app.pem"},
+    "webhook_secret_file": "/etc/muster/webhook.secret",
+    "poll": {"enabled": true, "interval": "60s", "repos": ["liquidmetal-dev/muster"]}
+  },
+  "battery": {"addr": "poolmgrd.example.com:8443", "tls": {"ca_file": "/etc/muster/battery-ca.pem"}, "namespace": "muster"},
+  "flintlock": {"tls": {"insecure": true}, "hosts": {"host-a": {"tls": {"ca_file": "/etc/muster/host-a-ca.pem"}}}},
+  "defaults": {"claim_deadline": "10m", "start_timeout": "2m", "idle_timeout": "5m", "max_session_duration": "6h"},
+  "pools": [
+    {
+      "name": "ubuntu-small",
+      "scope": {"org": "liquidmetal-dev", "runner_group": "Default"},
+      "labels": ["self-hosted", "linux", "x64", "muster", "ubuntu-24.04"],
+      "size": 3,
+      "max_concurrent": 6,
+      "flintlock_hosts": ["host-a"],
+      "create_commands": ["docker info"],
+      "microvm_template": {
+        "vcpu": 2,
+        "memoryInMb": 4096,
+        "kernel": {"image": "ghcr.io/liquidmetal-dev/firecracker-kernel:6.1-20260929-1349", "filename": "boot/vmlinux"},
+        "rootVolume": {"id": "root", "source": {"containerSource": "ghcr.io/liquidmetal-dev/muster-runner:minimal-latest"}},
+        "interfaces": [{"deviceId": "eth1", "type": "TAP"}]
+      }
+    }
+  ]
+}
