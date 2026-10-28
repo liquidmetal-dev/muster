@@ -36,6 +36,7 @@ func validate(cfg *Config) error {
 	validateBattery(cfg, &errs)
 	validateFlintlock(cfg, &errs)
 	validateDefaults(cfg, &errs)
+	validatePools(cfg, &errs)
 	return errs.err()
 }
 

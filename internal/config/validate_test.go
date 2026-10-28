@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +177,81 @@ func TestIsDNSLabel(t *testing.T) {
 		if config.IsDNSLabel(bad) {
 			t.Errorf("IsDNSLabel(%q) = true, want false", bad)
 		}
+	}
+}
+
+// secondPool appends a copy of pools[0] with the given name and returns it.
+func secondPool(m map[string]any, name string) map[string]any {
+	raw, _ := json.Marshal(pool(m, 0))
+	var p map[string]any
+	_ = json.Unmarshal(raw, &p)
+	p["name"] = name
+	m["pools"] = append(m["pools"].([]any), p)
+	return p
+}
+
+func TestValidatePools(t *testing.T) {
+	const pp = `pools["ubuntu-small"]`
+	runRuleCases(t, []ruleCase{
+		{"no pools", func(m map[string]any) { m["pools"] = []any{} }, "pools: at least one pool is required"},
+		{"name missing", func(m map[string]any) { pool(m, 0)["name"] = "" }, "pools[0].name: required"},
+		{"name uppercase", func(m map[string]any) { pool(m, 0)["name"] = "Ubuntu" }, `pools["Ubuntu"].name: must be a lowercase DNS label`},
+		{"name with digits ok", func(m map[string]any) { pool(m, 0)["name"] = "ubuntu-24-04" }, ""},
+		{"name duplicate", func(m map[string]any) { secondPool(m, "ubuntu-small") }, "pools[1].name: duplicate of pools[0]"},
+		{"scope both", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{"org": "a", "repo": "a/b"} }, pp + ".scope: exactly one of org or repo"},
+		{"scope neither", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{} }, pp + ".scope: exactly one of org or repo"},
+		{"scope repo ok", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{"repo": "liquidmetal-dev/muster"} }, ""},
+		{"scope repo bad", func(m map[string]any) { pool(m, 0)["scope"] = map[string]any{"repo": "muster"} }, pp + ".scope.repo: must be owner/name"},
+		{"runner_group with repo", func(m map[string]any) {
+			pool(m, 0)["scope"] = map[string]any{"repo": "liquidmetal-dev/muster", "runner_group": "g"}
+		}, pp + ".scope.runner_group: only valid with org"},
+		{"runner_group with org ok", nil, ""},
+		{"labels empty", func(m map[string]any) { pool(m, 0)["labels"] = []any{} }, pp + ".labels: required"},
+		{"labels no self-hosted", func(m map[string]any) { pool(m, 0)["labels"] = []any{"linux"} }, pp + `.labels: must include "self-hosted"`},
+		{"labels minimal ok", func(m map[string]any) { pool(m, 0)["labels"] = []any{"self-hosted"} }, ""},
+		{"label with space", func(m map[string]any) { pool(m, 0)["labels"] = []any{"self-hosted", "a b"} }, pp + ".labels[1]: must not be empty or contain whitespace or commas"},
+		{"label with comma", func(m map[string]any) { pool(m, 0)["labels"] = []any{"self-hosted", "a,b"} }, pp + ".labels[1]: must not be empty or contain whitespace or commas"},
+		{"label empty", func(m map[string]any) { pool(m, 0)["labels"] = []any{"self-hosted", ""} }, pp + ".labels[1]: must not be empty or contain whitespace or commas"},
+		{"label duplicate case", func(m map[string]any) { pool(m, 0)["labels"] = []any{"self-hosted", "Linux", "linux"} }, pp + ".labels[2]: duplicate of labels[1]"},
+		{"size zero", func(m map[string]any) { pool(m, 0)["size"] = 0 }, pp + ".size: must be at least 1"},
+		{"max_concurrent negative", func(m map[string]any) { pool(m, 0)["max_concurrent"] = -1 }, pp + ".max_concurrent: must be at least 1"},
+		{"max_concurrent below size ok", func(m map[string]any) { pool(m, 0)["max_concurrent"] = 1 }, ""},
+		{"hosts empty", func(m map[string]any) { pool(m, 0)["flintlock_hosts"] = []any{} }, pp + ".flintlock_hosts: required"},
+		{"hosts duplicate", func(m map[string]any) { pool(m, 0)["flintlock_hosts"] = []any{"host-a", "host-a"} }, pp + ".flintlock_hosts[1]: duplicate of flintlock_hosts[0]"},
+		{"host entry empty", func(m map[string]any) { pool(m, 0)["flintlock_hosts"] = []any{"", "host-a"} }, pp + ".flintlock_hosts[0]: must not be empty"},
+		{"two hosts ok", func(m map[string]any) { pool(m, 0)["flintlock_hosts"] = []any{"host-a", "host-b"} }, ""},
+		{"host not in overrides ok", func(m map[string]any) { pool(m, 0)["flintlock_hosts"] = []any{"host-z"} }, ""},
+		{"create_commands absent ok", func(m map[string]any) { delete(pool(m, 0), "create_commands") }, ""},
+		{"template missing", func(m map[string]any) { delete(pool(m, 0), "microvm_template") }, pp + ".microvm_template: required"},
+		{"template no kernel", func(m map[string]any) { delete(pool(m, 0)["microvm_template"].(map[string]any), "kernel") }, pp + ".microvm_template: kernel: required"},
+		{"template id", func(m map[string]any) { pool(m, 0)["microvm_template"].(map[string]any)["id"] = "x" }, pp + ".microvm_template: id: managed by muster"},
+		{"template snake_case ok", func(m map[string]any) {
+			tm := pool(m, 0)["microvm_template"].(map[string]any)
+			tm["memory_in_mb"] = tm["memoryInMb"]
+			delete(tm, "memoryInMb")
+			tm["root_volume"] = tm["rootVolume"]
+			delete(tm, "rootVolume")
+		}, ""},
+	})
+}
+
+func TestValidatePoolsSetsTemplate(t *testing.T) {
+	cfg, err := parseMutated(t, nil)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	tpl := cfg.Pools[0].Template
+	if tpl == nil || tpl.Vcpu != 2 || tpl.Kernel == nil || tpl.Kernel.Image != "ghcr.io/liquidmetal-dev/firecracker-kernel:6.1-20260929-1349" {
+		t.Fatalf("Template = %+v, want the decoded fixture template", tpl)
+	}
+}
+
+func TestValidatePoolsSizeOneDefaultsMaxConcurrent(t *testing.T) {
+	cfg, err := parseMutated(t, func(m map[string]any) { pool(m, 0)["size"] = 1; delete(pool(m, 0), "max_concurrent") })
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if cfg.Pools[0].MaxConcurrent != 2 {
+		t.Fatalf("MaxConcurrent = %d, want 2", cfg.Pools[0].MaxConcurrent)
 	}
 }
