@@ -22,8 +22,22 @@
 // gets a Default runner group with id 1. QueueJob stores a queued job as its
 // own run and POSTs a signed workflow_job.queued event to the webhook URL.
 // Deliveries are synchronous, never retried, and always recorded, so
-// Deliveries doubles as the event log; Redeliver repeats one. Tests inject faults with FailNext and Stall, keyed by the route pattern
-// constants, and observe traffic with Requests and RequestCount.
+// Deliveries doubles as the event log; Redeliver repeats one.
+//
+// After a JIT configuration is issued the fake advances the runner on
+// Config.Clock: offline, then online after OnlineAfter (default 1s), then
+// busy on the oldest queued job whose repository its scope covers and whose
+// labels are a subset of its own (in_progress), then completed after RunFor
+// (default 5s) with the conclusion from ExitCode, then deregistered after
+// DeregisterAfter (default 500ms). A runner is ephemeral and never takes a
+// second job. NextRunner queues a Behavior for the next JIT request (never
+// register, hold idle, durations, exit code); SetDefaultBehavior sets the
+// rest. The encoded JIT configuration (JITConfig) carries the runner id and
+// name, the run duration in seconds and the exit code.
+//
+// Tests inject faults with FailNext and Stall, keyed by the route pattern
+// constants. Runners, Jobs, Deliveries and Requests return snapshots,
+// RequestCount counts one route, and WaitFor polls a condition.
 package fakegithub
 
 import (

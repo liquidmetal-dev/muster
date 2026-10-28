@@ -348,3 +348,28 @@ func TestClockJumpCompletesJob(t *testing.T) {
 	e.clock.Advance(500 * time.Millisecond)
 	e.fake.WaitFor(t, waitTimeout, func() bool { return len(e.fake.Runners()) == 0 })
 }
+
+// advancingClock advances the manual clock to the timer's deadline right
+// before the timer is created, which is the window between the scheduler
+// reading Now and arming the timer.
+type advancingClock struct {
+	*clock.Manual
+	hits int
+}
+
+func (c *advancingClock) NewTimer(d time.Duration) clock.Timer {
+	if d > 0 {
+		c.hits++
+		c.Manual.Advance(d)
+	}
+	return c.Manual.NewTimer(d)
+}
+
+func TestSchedulerDoesNotLoseAWakeupWhenTheClockMovesWhileArming(t *testing.T) {
+	ac := &advancingClock{Manual: clock.NewManual(startTime)}
+	e := start(t, func(c *fakegithub.Config) { c.Clock = ac })
+	seed(e)
+	id := orgJIT(t, e, "muster-a", "x").GetRunner().GetID()
+	// The clock jumps to onlineAt as the scheduler arms; no further Advance.
+	waitRunnerStatus(t, e, id, "online")
+}

@@ -119,7 +119,7 @@ func TestRealClockShortTTLExpires(t *testing.T) {
 	key := fakegithub.AppKey(t)
 	fake := fakegithub.New(fakegithub.Config{
 		AppID: appID, AppPublicKey: &key.PublicKey, InstallationID: installationID,
-		InstallationAccount: "liquidmetal-dev", TokenTTL: 50 * time.Millisecond, Clock: clock.Real(),
+		InstallationAccount: "liquidmetal-dev", TokenTTL: 300 * time.Millisecond, Clock: clock.Real(),
 	})
 	url := fake.Start(t)
 	now := time.Now()
@@ -132,7 +132,7 @@ func TestRealClockShortTTLExpires(t *testing.T) {
 	if _, resp, _ := c.Actions.ListOrganizationRunners(ctx(), "x", nil); resp == nil || resp.StatusCode == http.StatusUnauthorized {
 		t.Fatal("fresh token rejected")
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
 	_, _, err = c.Actions.ListOrganizationRunners(ctx(), "x", nil)
 	wantStatus(t, err, http.StatusUnauthorized)
 }

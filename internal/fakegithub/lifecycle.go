@@ -107,6 +107,13 @@ func (s *Server) run() {
 		if pending {
 			t := s.clock.NewTimer(wait)
 			timerC, stop = t.C(), t.Stop
+			// The clock may have moved between reading Now and arming the
+			// timer. Re-check so a deadline that is already due is not lost.
+			if !s.clock.Now().Before(deadline) {
+				stop()
+				s.step()
+				continue
+			}
 		}
 		select {
 		case <-s.done:
