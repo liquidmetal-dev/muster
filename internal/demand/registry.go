@@ -119,20 +119,20 @@ func (r *Registry) Completed(id int64) { r.finish(id) }
 func (r *Registry) Polled(repos []string, listedAt time.Time, jobs []Job) {
 	r.mu.Lock()
 	now := r.pruneLocked()
-	var fresh, stale []string
+	fresh, stale := map[string]bool{}, map[string]bool{}
 	for _, repo := range repos {
-		key := strings.ToLower(repo)
+		key := repoKey(repo)
 		if listedAt.Before(r.listedAt[key]) {
-			stale = append(stale, repo)
+			stale[key] = true
 			continue
 		}
 		r.listedAt[key] = listedAt
-		fresh = append(fresh, repo)
+		fresh[key] = true
 	}
 	changed := false
 	listed := make(map[int64]bool, len(jobs))
 	for _, j := range jobs {
-		if containsFold(stale, j.Repo) {
+		if stale[repoKey(j.Repo)] {
 			continue
 		}
 		listed[j.ID] = true
@@ -141,7 +141,7 @@ func (r *Registry) Polled(repos []string, listedAt time.Time, jobs []Job) {
 		}
 	}
 	for id, rec := range r.open {
-		if listed[id] || !rec.lastSeen.Before(listedAt) || !containsFold(fresh, rec.repo) {
+		if listed[id] || !rec.lastSeen.Before(listedAt) || !fresh[repoKey(rec.repo)] {
 			continue
 		}
 		r.closeLocked(id, now)
@@ -243,6 +243,6 @@ func (r *Registry) unlockAndNotify(changed bool) {
 	}
 }
 
-func containsFold(list []string, s string) bool {
-	return slices.ContainsFunc(list, func(v string) bool { return strings.EqualFold(v, s) })
-}
+// repoKey is the form repositories compare in, since GitHub treats owner
+// and name case-insensitively.
+func repoKey(repo string) string { return strings.ToLower(repo) }

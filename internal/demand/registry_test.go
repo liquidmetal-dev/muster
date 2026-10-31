@@ -172,3 +172,15 @@ func TestPolledOlderListingAfterNewerIsIgnored(t *testing.T) {
 	r.Polled([]string{"acme/a"}, olderListedAt, nil)
 	wantDesired(t, r, "a", 1)
 }
+
+func TestPolledComparesReposWithoutCase(t *testing.T) {
+	r, clk, _ := newRegistry(t)
+	r.Queued(job(1, "acme/a"))
+	clk.Advance(time.Second)
+	r.Polled([]string{"ACME/A"}, clk.Now(), nil)
+	wantDesired(t, r, "a", 0)
+
+	r.Queued(job(2, "Acme/A"))
+	r.Polled([]string{"acme/a"}, clk.Now().Add(-time.Second), []demand.Job{job(3, "ACME/a")})
+	wantDesired(t, r, "a", 1)
+}
