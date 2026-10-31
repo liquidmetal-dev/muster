@@ -112,6 +112,25 @@ func (d *Dispatcher) Wake() {
 	}
 }
 
+// Run makes one pass at once and then one on each Wake and each Interval,
+// until ctx is done. Passes never overlap.
+func (d *Dispatcher) Run(ctx context.Context) {
+	for {
+		// Arm the timer before the pass, so a caller that has seen the
+		// pass's effect knows the next tick is already scheduled.
+		t := d.clock.NewTimer(d.interval)
+		d.pass(ctx)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return
+		case <-d.wakeCh:
+		case <-t.C():
+		}
+		t.Stop()
+	}
+}
+
 func (d *Dispatcher) pass(ctx context.Context) {
 	for _, p := range d.pools {
 		desired := d.demand.Desired(p.Name)
