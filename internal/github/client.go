@@ -25,6 +25,14 @@ type Client struct {
 // New builds a Client. It makes no network calls; the first call that needs
 // an installation token fetches it.
 func New(cfg Config) (*Client, error) {
+	switch {
+	case cfg.App != nil && cfg.Token != "":
+		return nil, fmt.Errorf("%w: both an App and a token are configured", ErrInvalidRequest)
+	case cfg.App == nil && cfg.Token == "":
+		return nil, fmt.Errorf("%w: no credential is configured", ErrInvalidRequest)
+	case cfg.App != nil && cfg.App.PrivateKey == nil:
+		return nil, fmt.Errorf("%w: the App has no private key", ErrInvalidRequest)
+	}
 	cfg = cfg.withDefaults()
 	base, err := parseBaseURL(cfg.BaseURL)
 	if err != nil {
@@ -66,11 +74,17 @@ func parseBaseURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
+// newGoGitHub disables go-github's own rate limit precheck: it fails a call
+// before it reaches retryTransport, which is the only rate limit policy.
 func newGoGitHub(base *url.URL, rt http.RoundTripper) (*gogithub.Client, error) {
 	b := base.String()
+	urls := gogithub.WithURLs(&b, &b)
+	if !strings.EqualFold(base.Hostname(), "api.github.com") {
+		urls = gogithub.WithEnterpriseURLs(b, b)
+	}
 	gh, err := gogithub.NewClient(
 		gogithub.WithHTTPClient(&http.Client{Transport: rt}),
-		gogithub.WithURLs(&b, &b),
+		urls,
 		gogithub.WithDisableRateLimitCheck(),
 	)
 	if err != nil {
