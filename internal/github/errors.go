@@ -3,7 +3,10 @@ package github
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
+
+	gogithub "github.com/google/go-github/v93/github"
 )
 
 var (
@@ -41,3 +44,30 @@ func (e *RateLimitedError) Error() string {
 
 // Is makes errors.Is(err, ErrRateLimited) match.
 func (e *RateLimitedError) Is(target error) bool { return target == ErrRateLimited }
+
+// mapError wraps a go-github error with the matching sentinel. Errors carry
+// GitHub's message and the request URL, never a request body.
+func mapError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var rl *RateLimitedError
+	if errors.As(err, &rl) {
+		return rl
+	}
+	var primary *gogithub.RateLimitError
+	var secondary *gogithub.AbuseRateLimitError
+	if errors.As(err, &primary) || errors.As(err, &secondary) {
+		return fmt.Errorf("%w: %w", ErrRateLimited, err)
+	}
+	var resp *gogithub.ErrorResponse
+	if errors.As(err, &resp) && resp.Response != nil {
+		switch resp.Response.StatusCode {
+		case http.StatusNotFound:
+			return fmt.Errorf("%w: %w", ErrNotFound, err)
+		case http.StatusUnauthorized:
+			return fmt.Errorf("%w: %w", ErrUnauthorized, err)
+		}
+	}
+	return fmt.Errorf("github: %w", err)
+}

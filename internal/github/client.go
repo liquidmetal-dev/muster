@@ -34,9 +34,10 @@ func New(cfg Config) (*Client, error) {
 	if cfg.HTTPClient != nil && cfg.HTTPClient.Transport != nil {
 		next = cfg.HTTPClient.Transport
 	}
+	retry := &retryTransport{cfg: cfg, next: next}
 	c := &Client{cfg: cfg, base: base}
 	if cfg.App != nil {
-		c.jwt, err = newGoGitHub(base, &jwtTransport{auth: *cfg.App, clock: cfg.Clock, next: next})
+		c.jwt, err = newGoGitHub(base, &jwtTransport{auth: *cfg.App, clock: cfg.Clock, base: base, next: retry})
 		if err != nil {
 			return nil, err
 		}
@@ -44,7 +45,7 @@ func New(cfg Config) (*Client, error) {
 	} else {
 		c.src = patSource{token: cfg.Token}
 	}
-	c.gh, err = newGoGitHub(base, next)
+	c.gh, err = newGoGitHub(base, &authTransport{src: c.src, app: cfg.App != nil, base: base, next: retry})
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +71,7 @@ func newGoGitHub(base *url.URL, rt http.RoundTripper) (*gogithub.Client, error) 
 	gh, err := gogithub.NewClient(
 		gogithub.WithHTTPClient(&http.Client{Transport: rt}),
 		gogithub.WithURLs(&b, &b),
+		gogithub.WithDisableRateLimitCheck(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("github: build client: %w", err)
@@ -78,9 +80,26 @@ func newGoGitHub(base *url.URL, rt http.RoundTripper) (*gogithub.Client, error) 
 }
 
 func (c *Client) exchangeToken(ctx context.Context) (string, time.Time, error) {
+	ctx = withEndpoint(ctx, endpointAccessToken)
 	tok, _, err := c.jwt.Apps.CreateInstallationToken(ctx, c.cfg.App.InstallationID, nil)
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	return tok.GetToken(), tok.GetExpiresAt().Time, nil
+}
+
+// Ping checks that the credential works: the App installation is readable
+// with the App JWT, or the PAT identifies a user.
+func (c *Client) Ping(ctx context.Context) error {
+	if c.cfg.App != nil {
+		_, err := c.installation(ctx)
+		return err
+	}
+	_, _, err := c.gh.Users.Get(withEndpoint(ctx, endpointUser), "")
+	return mapError(err)
+}
+
+func (c *Client) installation(ctx context.Context) (*gogithub.Installation, error) {
+	inst, _, err := c.jwt.Apps.GetInstallation(withEndpoint(ctx, endpointInstallation), c.cfg.App.InstallationID)
+	return inst, mapError(err)
 }

@@ -1,6 +1,10 @@
 package github
 
-import "sync"
+import (
+	"context"
+	"net/http"
+	"sync"
+)
 
 // Metrics receives one ObserveCall per HTTP attempt and one ObserveError per
 // failed attempt (requirement GH-5). Endpoint is a route template such as
@@ -63,4 +67,23 @@ func (c *Counters) Errors(endpoint, kind string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.errors[[2]string{endpoint, kind}]
+}
+
+const (
+	endpointAccessToken  = "POST /app/installations/{id}/access_tokens" //nolint:gosec // a route template, not a credential
+	endpointInstallation = "GET /app/installations/{id}"
+	endpointUser         = "GET /user"
+)
+
+type endpointKey struct{}
+
+func withEndpoint(ctx context.Context, endpoint string) context.Context {
+	return context.WithValue(ctx, endpointKey{}, endpoint)
+}
+
+func endpointFrom(ctx context.Context, r *http.Request) string {
+	if e, ok := ctx.Value(endpointKey{}).(string); ok {
+		return e
+	}
+	return r.Method + " unknown"
 }
