@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -43,6 +44,44 @@ type Config struct {
 	// MaxWait is the longest single wait before a retry. A rate limit that
 	// asks for longer is returned as *RateLimitedError. Defaults to 60s.
 	MaxWait time.Duration
+
+	sleep func(ctx context.Context, d time.Duration) error
+}
+
+func (c Config) withDefaults() Config {
+	if c.Clock == nil {
+		c.Clock = clock.Real()
+	}
+	if c.Logger == nil {
+		c.Logger = slog.Default()
+	}
+	if c.Metrics == nil {
+		c.Metrics = NopMetrics{}
+	}
+	if c.CallTimeout <= 0 {
+		c.CallTimeout = 30 * time.Second
+	}
+	if c.MaxAttempts <= 0 {
+		c.MaxAttempts = 5
+	}
+	if c.MaxWait <= 0 {
+		c.MaxWait = 60 * time.Second
+	}
+	if c.sleep == nil {
+		c.sleep = sleepContext
+	}
+	return c
+}
+
+func sleepContext(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 // FromConfig builds a Config from loaded configuration. Load has already
