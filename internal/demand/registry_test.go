@@ -144,3 +144,16 @@ func TestTombstoneExpires(t *testing.T) {
 	r.Queued(job(1, "acme/a"))
 	wantDesired(t, r, "a", 1)
 }
+
+func TestPolledLateOlderListingDoesNotShieldJob(t *testing.T) {
+	r, clk, _ := newRegistry(t)
+	r.Queued(job(1, "acme/a"))
+	clk.Advance(time.Second)
+	olderListedAt := clk.Now()
+	clk.Advance(time.Second)
+	newerListedAt := clk.Now()
+	clk.Advance(time.Second)
+	r.Polled([]string{"acme/a"}, olderListedAt, []demand.Job{job(1, "acme/a")})
+	r.Polled([]string{"acme/a"}, newerListedAt, nil)
+	wantDesired(t, r, "a", 0)
+}

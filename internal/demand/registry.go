@@ -97,7 +97,7 @@ func (r *Registry) SetOnChange(fn func()) {
 func (r *Registry) Queued(j Job) {
 	r.mu.Lock()
 	now := r.pruneLocked()
-	changed := r.queuedLocked(j, now)
+	changed := r.queuedLocked(j, now, now)
 	r.unlockAndNotify(changed)
 }
 
@@ -118,7 +118,7 @@ func (r *Registry) Polled(repos []string, listedAt time.Time, jobs []Job) {
 	listed := make(map[int64]bool, len(jobs))
 	for _, j := range jobs {
 		listed[j.ID] = true
-		if r.queuedLocked(j, now) {
+		if r.queuedLocked(j, now, listedAt) {
 			changed = true
 		}
 	}
@@ -162,12 +162,17 @@ func (r *Registry) finish(id int64) {
 	r.unlockAndNotify(wasOpen)
 }
 
-func (r *Registry) queuedLocked(j Job, now time.Time) bool {
+// queuedLocked records a sighting of j at seenAt. A poll's sighting is its
+// listing time, not the time it is merged, so a late older poll cannot
+// shield a job from a newer poll that no longer lists it.
+func (r *Registry) queuedLocked(j Job, now, seenAt time.Time) bool {
 	if _, ok := r.closed[j.ID]; ok {
 		return false
 	}
 	if rec, ok := r.open[j.ID]; ok {
-		rec.lastSeen = now
+		if seenAt.After(rec.lastSeen) {
+			rec.lastSeen = seenAt
+		}
 		if rec.queuedAt.IsZero() {
 			rec.queuedAt = j.QueuedAt
 		}
@@ -184,7 +189,7 @@ func (r *Registry) queuedLocked(j Job, now time.Time) bool {
 		pool:      pool,
 		repo:      j.Repo,
 		firstSeen: now,
-		lastSeen:  now,
+		lastSeen:  seenAt,
 		queuedAt:  j.QueuedAt,
 	}
 	return true
