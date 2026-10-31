@@ -64,6 +64,8 @@ type Registry struct {
 	onChange func()
 	open     map[int64]*record
 	closed   map[int64]time.Time
+	// listedAt is the newest poll listing time per lower-case repository.
+	listedAt map[string]time.Time
 }
 
 // New returns an empty Registry.
@@ -75,11 +77,12 @@ func New(cfg Config) *Registry {
 		cfg.Logger = slog.Default()
 	}
 	return &Registry{
-		pools:  cfg.Pools,
-		clock:  cfg.Clock,
-		logger: cfg.Logger,
-		open:   map[int64]*record{},
-		closed: map[int64]time.Time{},
+		pools:    cfg.Pools,
+		clock:    cfg.Clock,
+		logger:   cfg.Logger,
+		open:     map[int64]*record{},
+		closed:   map[int64]time.Time{},
+		listedAt: map[string]time.Time{},
 	}
 }
 
@@ -110,20 +113,35 @@ func (r *Registry) Completed(id int64) { r.finish(id) }
 // Polled merges one poll of repos, listed at listedAt, into the registry.
 // Listed jobs are recorded as by Queued. An open record in one of repos
 // that is not listed closes, unless muster saw the job at or after
-// listedAt, because a newer sighting outranks an older listing.
+// listedAt, because a newer sighting outranks an older listing. A repo
+// already merged from a newer listing is skipped, so polls that finish out
+// of order cannot reopen stale demand.
 func (r *Registry) Polled(repos []string, listedAt time.Time, jobs []Job) {
 	r.mu.Lock()
 	now := r.pruneLocked()
+	var fresh, stale []string
+	for _, repo := range repos {
+		key := strings.ToLower(repo)
+		if listedAt.Before(r.listedAt[key]) {
+			stale = append(stale, repo)
+			continue
+		}
+		r.listedAt[key] = listedAt
+		fresh = append(fresh, repo)
+	}
 	changed := false
 	listed := make(map[int64]bool, len(jobs))
 	for _, j := range jobs {
+		if containsFold(stale, j.Repo) {
+			continue
+		}
 		listed[j.ID] = true
 		if r.queuedLocked(j, now, listedAt) {
 			changed = true
 		}
 	}
 	for id, rec := range r.open {
-		if listed[id] || !rec.lastSeen.Before(listedAt) || !containsFold(repos, rec.repo) {
+		if listed[id] || !rec.lastSeen.Before(listedAt) || !containsFold(fresh, rec.repo) {
 			continue
 		}
 		r.closeLocked(id, now)

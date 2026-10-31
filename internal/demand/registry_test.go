@@ -157,3 +157,18 @@ func TestPolledLateOlderListingDoesNotShieldJob(t *testing.T) {
 	r.Polled([]string{"acme/a"}, newerListedAt, nil)
 	wantDesired(t, r, "a", 0)
 }
+
+func TestPolledOlderListingAfterNewerIsIgnored(t *testing.T) {
+	r, clk, _ := newRegistry(t)
+	olderListedAt := clk.Now()
+	clk.Advance(time.Second)
+	newerListedAt := clk.Now()
+	r.Polled([]string{"acme/a"}, newerListedAt, nil)
+	r.Polled([]string{"acme/a"}, olderListedAt, []demand.Job{job(1, "acme/a")})
+	wantDesired(t, r, "a", 0)
+
+	r.Queued(job(2, "acme/a"))
+	clk.Advance(time.Second)
+	r.Polled([]string{"acme/a"}, olderListedAt, nil)
+	wantDesired(t, r, "a", 1)
+}
