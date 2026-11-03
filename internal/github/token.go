@@ -64,7 +64,7 @@ func (a *appSource) Token(ctx context.Context) (string, error) {
 	}
 	tok, exp, err := a.exchange(ctx)
 	if err != nil {
-		if a.tok != "" && now.Before(a.exp) {
+		if a.tok != "" && a.clock.Now().Before(a.exp) {
 			return a.tok, nil
 		}
 		return "", fmt.Errorf("github: installation token: %w", err)
