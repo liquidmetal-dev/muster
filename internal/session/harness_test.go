@@ -177,7 +177,7 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 		t.Fatalf("github.New: %v", err)
 	}
 
-	e.Rec = &recordingGitHub{Client: e.Client}
+	e.Rec = &recordingGitHub{Client: e.Client, pool: e.Pool}
 	e.Config = session.Config{
 		Pools:        o.pools,
 		Namespace:    testNS,
@@ -222,6 +222,13 @@ func serve(t *testing.T, fn func(net.Listener, ...grpc.ServerOption) error) stri
 // start runs the registry until the test ends.
 func (e *env) start() {
 	e.t.Helper()
+	e.startCancelable()
+}
+
+// startCancelable runs the registry and returns a stop that cancels Run
+// and reports whether Run returned within d of real time.
+func (e *env) startCancelable() (stop func(d time.Duration) bool) {
+	e.t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -232,9 +239,19 @@ func (e *env) start() {
 		cancel()
 		<-done
 	})
+	stop = func(d time.Duration) bool {
+		cancel()
+		select {
+		case <-done:
+			return true
+		case <-time.After(d):
+			return false
+		}
+	}
 	waitFor(e.t, func() bool {
 		return !errors.Is(e.Registry.Create(context.Background(), "\x00probe"), session.ErrNotRunning)
 	})
+	return stop
 }
 
 // create adds one session to pool and returns its id.
@@ -378,6 +395,22 @@ type recordingGitHub struct {
 	mu      sync.Mutex
 	encoded []string
 	hidden  map[string]bool
+	pool    *fakepoolmgr.Server
+	// releasesAtDelete is the ReleaseVM count at each DeleteRunner call.
+	releasesAtDelete []int
+}
+
+func (g *recordingGitHub) DeleteRunner(ctx context.Context, s github.Scope, id int64) error {
+	g.mu.Lock()
+	g.releasesAtDelete = append(g.releasesAtDelete, g.pool.CallCount("ReleaseVM"))
+	g.mu.Unlock()
+	return g.Client.DeleteRunner(ctx, s, id)
+}
+
+func (g *recordingGitHub) deletes() []int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return slices.Clone(g.releasesAtDelete)
 }
 
 // hide makes ListRunners leave out the named runner, as GitHub does once a

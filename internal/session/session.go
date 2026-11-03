@@ -142,10 +142,8 @@ func (r *Registry) finish(ctx context.Context, s *session, outcome State, reason
 	r.mu.Lock()
 	s.state, s.reason = outcome, reason
 	r.mu.Unlock()
-	if s.vm != nil {
-		if err := r.cfg.Source.Release(ctx, s.vm); err != nil {
-			s.log.Warn("release VM", "err", err)
-		}
+	if !r.cleanup(ctx, s) {
+		return
 	}
 	r.mu.Lock()
 	info := s.infoLocked()

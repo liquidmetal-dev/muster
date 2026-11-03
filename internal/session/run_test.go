@@ -208,7 +208,9 @@ func TestRunnerTakesOtherJob(t *testing.T) {
 		t.Fatalf("Counts = (%d, %d), want (1, 0)", a, nb)
 	}
 	c.exit(0)
-	wantEnd(t, e.endedInfo(), session.Ended, session.ReasonExecExit)
+	// The fake keeps the runner busy for its whole job, so the runner
+	// delete returns busy until the job ends there.
+	wantEnd(t, e.driveEnd(time.Minute), session.Ended, session.ReasonExecExit)
 }
 
 func TestExecBrokenIsNotEnd(t *testing.T) {
