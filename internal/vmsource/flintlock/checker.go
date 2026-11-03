@@ -21,10 +21,9 @@ import (
 type HostResolver func(ctx context.Context, names []string) ([]vmsource.HostInfo, error)
 
 // NewChecker returns the config.Checker that runs CheckHost on every
-// flintlock host of every pool. Any error it returns fails validation, so
-// it suits `musterctl config validate`. Pool reconciliation calls
-// Execer.CheckHost itself, so that it refuses only the pools of a bad host
-// (POOL-4).
+// flintlock host of every pool. Any error it returns fails the whole
+// config.Check; to refuse only the pools of a bad host (POOL-4), call
+// Execer.CheckHost for each host instead.
 //
 // A host that did not answer (Unavailable or DeadlineExceeded) is logged
 // and passes, because the first Exec on it checks it again.

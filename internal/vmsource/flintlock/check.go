@@ -34,7 +34,7 @@ func (e *Execer) CheckHost(ctx context.Context, host vmsource.HostInfo) error {
 	}
 	info, err := mvmv1.NewMicroVMClient(c).ServerInfo(ctx, &emptypb.Empty{})
 	if err != nil {
-		return fmt.Errorf("flintlock: host %s (%s): server info: %w", host.Name, host.Address, err)
+		return fmt.Errorf("%s: server info: %w", hostPrefix(host), err)
 	}
 	// The version comes first: an old flintlock has no exec api to enable.
 	raw := info.GetVersion().GetVersion()
@@ -43,16 +43,13 @@ func (e *Execer) CheckHost(ctx context.Context, host vmsource.HostInfo) error {
 		v = "v" + v
 	}
 	if !semver.IsValid(v) {
-		return hostError{ErrUnsupportedVersion, fmt.Sprintf("flintlock: host %s (%s): version %q is not semver; need %s or later",
-			host.Name, host.Address, raw, MinVersion)}
+		return newHostError(ErrUnsupportedVersion, host, "version %q is not semver; need %s or later", raw, MinVersion)
 	}
 	if semver.Compare(v, MinVersion) < 0 {
-		return hostError{ErrUnsupportedVersion, fmt.Sprintf("flintlock: host %s (%s): version %s is older than %s",
-			host.Name, host.Address, raw, MinVersion)}
+		return newHostError(ErrUnsupportedVersion, host, "version %s is older than %s", raw, MinVersion)
 	}
 	if !info.GetExec().GetEnabled() {
-		return hostError{ErrExecDisabled, fmt.Sprintf("flintlock: host %s (%s): exec api is disabled; start flintlockd with --enable-exec-api",
-			host.Name, host.Address)}
+		return newHostError(ErrExecDisabled, host, "exec api is disabled; start flintlockd with --enable-exec-api")
 	}
 	return nil
 }
@@ -62,6 +59,14 @@ func (e *Execer) CheckHost(ctx context.Context, host vmsource.HostInfo) error {
 type hostError struct {
 	sentinel error
 	msg      string
+}
+
+func newHostError(sentinel error, host vmsource.HostInfo, format string, args ...any) hostError {
+	return hostError{sentinel, hostPrefix(host) + ": " + fmt.Sprintf(format, args...)}
+}
+
+func hostPrefix(host vmsource.HostInfo) string {
+	return fmt.Sprintf("flintlock: host %s (%s)", host.Name, host.Address)
 }
 
 func (e hostError) Error() string { return e.msg }

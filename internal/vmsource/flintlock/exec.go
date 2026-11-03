@@ -41,7 +41,7 @@ func (e *Execer) Exec(ctx context.Context, host vmsource.HostInfo, vmID string, 
 	stream, err := mvmexecv1.NewMicroVMExecClient(c).ExecCommand(sctx)
 	if err != nil {
 		cancel()
-		return nil, wrapStatus(fmt.Errorf("flintlock: host %s: exec: %w", host.Name, err))
+		return nil, execErr(host, err)
 	}
 	start := &mvmexecv1.ExecStart{
 		Uid:            vmID,
@@ -60,7 +60,7 @@ func (e *Execer) Exec(ctx context.Context, host vmsource.HostInfo, vmID string, 
 			_, err = stream.Recv()
 		}
 		cancel()
-		return nil, wrapStatus(fmt.Errorf("flintlock: host %s: exec: %w", host.Name, err))
+		return nil, execErr(host, err)
 	}
 	return newSession(ctx, cancel, stream, spec.HasStdin), nil
 }
@@ -97,6 +97,10 @@ func timeoutSeconds(d time.Duration) (int32, error) {
 		return 0, fmt.Errorf("flintlock: timeout %v is too long", d)
 	}
 	return int32(secs), nil
+}
+
+func execErr(host vmsource.HostInfo, err error) error {
+	return wrapStatus(fmt.Errorf("%s: exec: %w", hostPrefix(host), err))
 }
 
 // wrapStatus marks the statuses that mean exec cannot run on this VM or

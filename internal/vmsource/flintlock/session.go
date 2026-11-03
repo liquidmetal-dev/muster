@@ -77,8 +77,7 @@ func (s *session) Close() error {
 	s.closed = true
 	s.mu.Unlock()
 	s.cancel()
-	_ = s.stdoutR.CloseWithError(ErrSessionClosed)
-	_ = s.stderrR.CloseWithError(ErrSessionClosed)
+	s.closeReaders(ErrSessionClosed)
 	return nil
 }
 
@@ -96,9 +95,7 @@ func (s *session) watch() {
 	if s.finished {
 		return
 	}
-	err := fmt.Errorf("flintlock: exec: %w", s.parent.Err())
-	_ = s.stdoutR.CloseWithError(err)
-	_ = s.stderrR.CloseWithError(err)
+	s.closeReaders(fmt.Errorf("flintlock: exec: %w", s.parent.Err()))
 }
 
 func (s *session) receive() {
@@ -151,15 +148,16 @@ func (s *session) finish(code int, err error) {
 	s.finished = true
 	s.mu.Unlock()
 
-	if err != nil {
-		_ = s.stdoutW.CloseWithError(err)
-		_ = s.stderrW.CloseWithError(err)
-	} else {
-		_ = s.stdoutW.Close()
-		_ = s.stderrW.Close()
-	}
+	// A nil err closes the writers so that readers see EOF.
+	_ = s.stdoutW.CloseWithError(err)
+	_ = s.stderrW.CloseWithError(err)
 	close(s.done)
 	s.cancel()
+}
+
+func (s *session) closeReaders(err error) {
+	_ = s.stdoutR.CloseWithError(err)
+	_ = s.stderrR.CloseWithError(err)
 }
 
 type stdinWriter struct {

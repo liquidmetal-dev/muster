@@ -28,8 +28,9 @@ type Execer struct {
 	checked  map[hostKey]bool
 	inflight map[hostKey]*checkCall
 
-	// dialOptions is appended after the credentials. Only in-package tests
-	// can set it.
+	// dialOptions is appended after the credentials. It is unexported so
+	// that nothing outside the package can replace the credentials that
+	// TLSFor selects.
 	dialOptions []grpc.DialOption
 }
 
