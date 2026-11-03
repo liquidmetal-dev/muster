@@ -197,6 +197,9 @@ func TestBadSignatureIs401(t *testing.T) {
 			if got := m.Count("", webhook.OutcomeBadSignature); got != 1 {
 				t.Fatalf("bad_signature count = %d, want 1", got)
 			}
+			if code := send(t, h, "d1", matching(1)); code != http.StatusOK || len(d.queued) != 1 {
+				t.Fatalf("valid retry: status = %d, queued = %d, want 200 and 1", code, len(d.queued))
+			}
 		})
 	}
 }
