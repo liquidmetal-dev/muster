@@ -5,6 +5,7 @@ import "strconv"
 // State is the lifecycle state of a session.
 type State int
 
+// Session states.
 const (
 	Pending State = iota
 	Claiming
