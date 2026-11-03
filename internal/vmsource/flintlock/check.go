@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	mvmv1 "github.com/liquidmetal-dev/flintlock/api/services/microvm/v1alpha1"
 	"golang.org/x/mod/semver"
@@ -72,8 +73,14 @@ type checkCall struct {
 	err  error
 }
 
+// checkTimeout bounds a shared check, which no single caller's context
+// may cancel.
+const checkTimeout = 10 * time.Second
+
 // ensureChecked runs CheckHost once per host until it passes. Callers that
-// arrive while a check runs wait for its result.
+// arrive while a check runs wait for its result. The check runs detached
+// from the caller that started it, so one cancelled caller does not fail
+// the others; each caller still stops waiting when its own ctx ends.
 func (e *Execer) ensureChecked(ctx context.Context, host vmsource.HostInfo) error {
 	k := keyOf(host)
 	e.mu.Lock()
@@ -85,19 +92,9 @@ func (e *Execer) ensureChecked(ctx context.Context, host vmsource.HostInfo) erro
 	if !running {
 		call = &checkCall{done: make(chan struct{})}
 		e.inflight[k] = call
+		go e.runCheck(context.WithoutCancel(ctx), host, call)
 	}
 	e.mu.Unlock()
-
-	if !running {
-		call.err = e.CheckHost(ctx, host)
-		e.mu.Lock()
-		if call.err == nil {
-			e.checked[k] = true
-		}
-		delete(e.inflight, k)
-		e.mu.Unlock()
-		close(call.done)
-	}
 
 	select {
 	case <-call.done:
@@ -105,4 +102,18 @@ func (e *Execer) ensureChecked(ctx context.Context, host vmsource.HostInfo) erro
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (e *Execer) runCheck(ctx context.Context, host vmsource.HostInfo, call *checkCall) {
+	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+	defer cancel()
+	call.err = e.CheckHost(ctx, host)
+	k := keyOf(host)
+	e.mu.Lock()
+	if call.err == nil {
+		e.checked[k] = true
+	}
+	delete(e.inflight, k)
+	e.mu.Unlock()
+	close(call.done)
 }

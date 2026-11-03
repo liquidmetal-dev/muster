@@ -77,6 +77,14 @@ func TestExecStdinReachesFake(t *testing.T) {
 	if len(calls) != 1 || !bytes.Equal(calls[0].Stdin, want) || !calls[0].StdinEOF {
 		t.Fatalf("fake got %d bytes, eof=%v; want %d bytes and eof", len(calls[0].Stdin), calls[0].StdinEOF, len(want))
 	}
+	for i, n := range calls[0].StdinFrames {
+		if n > stdinChunk {
+			t.Fatalf("stdin frame %d is %d bytes, want at most %d", i, n, stdinChunk)
+		}
+	}
+	if n := len(calls[0].StdinFrames); n < 4 {
+		t.Fatalf("stdin frames = %d, want at least 4 for 200 KiB", n)
+	}
 }
 
 func TestExecStreamsOutputAndExitCode(t *testing.T) {
@@ -164,6 +172,17 @@ func TestExecErrorFrame(t *testing.T) {
 	o := drain(t, execOK(t, newTestExecer(t, fake), vmsource.ExecSpec{Cmd: "x"}))
 	if o.code != 1 || o.err == nil || !strings.Contains(o.err.Error(), "boom") {
 		t.Fatalf("Wait = %d, %v; want 1 and an error with boom", o.code, o.err)
+	}
+}
+
+func TestExecEmptyErrorFrame(t *testing.T) {
+	fake := fakeexec.New()
+	fake.AddVM("vm-1", func(context.Context, *mvmexecv1.ExecStart, io.Reader, io.Writer, io.Writer) fakeexec.Result {
+		return fakeexec.Result{SendErrorFrame: true, ExitCode: 1}
+	})
+	o := drain(t, execOK(t, newTestExecer(t, fake), vmsource.ExecSpec{Cmd: "x"}))
+	if o.code != 1 || o.err == nil {
+		t.Fatalf("Wait = %d, %v; want 1 and an error", o.code, o.err)
 	}
 }
 
@@ -273,6 +292,42 @@ func TestConcurrentFirstExecSharesCheck(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Fatalf("Exec: %v", err)
+	}
+	if n := fake.ServerInfoCount(); n != 1 {
+		t.Fatalf("ServerInfoCount = %d, want 1", n)
+	}
+}
+
+func TestCancelledCallerDoesNotFailSharedCheck(t *testing.T) {
+	fake := fakeexec.New()
+	fake.AddVM("vm-1", exitWith(0))
+	release := fake.HoldServerInfo()
+	e := newTestExecer(t, fake)
+
+	first, cancelFirst := context.WithCancel(t.Context())
+	firstErr := make(chan error, 1)
+	go func() {
+		_, err := e.Exec(first, hostA, "vm-1", vmsource.ExecSpec{Cmd: "x"})
+		firstErr <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	second := make(chan error, 1)
+	go func() {
+		s, err := e.Exec(t.Context(), hostA, "vm-1", vmsource.ExecSpec{Cmd: "x"})
+		if err == nil {
+			err = drain(t, s).err
+			_ = s.Close()
+		}
+		second <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	cancelFirst()
+	if err := <-firstErr; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first Exec = %v, want context.Canceled", err)
+	}
+	release()
+	if err := <-second; err != nil {
+		t.Fatalf("second Exec = %v, want nil", err)
 	}
 	if n := fake.ServerInfoCount(); n != 1 {
 		t.Fatalf("ServerInfoCount = %d, want 1", n)

@@ -103,6 +103,7 @@ func (s *session) watch() {
 
 func (s *session) receive() {
 	var errFrame string
+	gotErrFrame := false
 	for {
 		resp, err := s.stream.Recv()
 		if err != nil {
@@ -124,10 +125,10 @@ func (s *session) receive() {
 				return
 			}
 		case *mvmexecv1.ExecCommandResponse_Error:
-			errFrame = p.Error
+			errFrame, gotErrFrame = p.Error, true
 		case *mvmexecv1.ExecCommandResponse_ExitCode:
 			var err error
-			if errFrame != "" {
+			if gotErrFrame {
 				err = fmt.Errorf("flintlock: exec error: %s", errFrame)
 			}
 			s.finish(int(p.ExitCode), err)

@@ -43,6 +43,8 @@ type Result struct {
 	// ErrorFrame, when set, is sent as an error frame before exit_code, as
 	// the real server does for a guest-agent error event.
 	ErrorFrame string
+	// SendErrorFrame sends the error frame even when ErrorFrame is empty.
+	SendErrorFrame bool
 	// Abort, when set, is returned from the RPC and no exit_code is sent.
 	Abort error
 }
@@ -57,6 +59,8 @@ type Call struct {
 	Start    *mvmexecv1.ExecStart
 	Stdin    []byte
 	StdinEOF bool
+	// StdinFrames is the size of each stdin frame, in order.
+	StdinFrames []int
 }
 
 // Server is the fake. The zero value is not usable; call New.
@@ -274,15 +278,15 @@ func (s *Server) ExecCommand(stream mvmexecv1.MicroVMExec_ExecCommandServer) err
 	res := h(stream.Context(), start, pr, out.writer(stdoutFrame), out.writer(stderrFrame))
 	_ = pr.Close()
 
-	stdin, eof := in.snapshot()
+	stdin, frames, eof := in.snapshot()
 	s.mu.Lock()
-	s.calls = append(s.calls, Call{Start: start, Stdin: stdin, StdinEOF: eof})
+	s.calls = append(s.calls, Call{Start: start, Stdin: stdin, StdinEOF: eof, StdinFrames: frames})
 	s.mu.Unlock()
 
 	if res.Abort != nil {
 		return res.Abort
 	}
-	if res.ErrorFrame != "" {
+	if res.ErrorFrame != "" || res.SendErrorFrame {
 		if err := out.send(&mvmexecv1.ExecCommandResponse{Payload: &mvmexecv1.ExecCommandResponse_Error{Error: res.ErrorFrame}}); err != nil {
 			return err
 		}
@@ -291,9 +295,10 @@ func (s *Server) ExecCommand(stream mvmexecv1.MicroVMExec_ExecCommandServer) err
 }
 
 type stdinRecorder struct {
-	mu   sync.Mutex
-	data []byte
-	eof  bool
+	mu     sync.Mutex
+	data   []byte
+	frames []int
+	eof    bool
 }
 
 func (r *stdinRecorder) pump(stream mvmexecv1.MicroVMExec_ExecCommandServer, pw *io.PipeWriter) {
@@ -307,6 +312,7 @@ func (r *stdinRecorder) pump(stream mvmexecv1.MicroVMExec_ExecCommandServer, pw 
 		case *mvmexecv1.ExecCommandRequest_Stdin:
 			r.mu.Lock()
 			r.data = append(r.data, p.Stdin...)
+			r.frames = append(r.frames, len(p.Stdin))
 			r.mu.Unlock()
 			if _, err := pw.Write(p.Stdin); err != nil {
 				return
@@ -321,10 +327,10 @@ func (r *stdinRecorder) pump(stream mvmexecv1.MicroVMExec_ExecCommandServer, pw 
 	}
 }
 
-func (r *stdinRecorder) snapshot() ([]byte, bool) {
+func (r *stdinRecorder) snapshot() ([]byte, []int, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]byte(nil), r.data...), r.eof
+	return append([]byte(nil), r.data...), append([]int(nil), r.frames...), r.eof
 }
 
 type frameKind int
