@@ -3,7 +3,8 @@
 // as flintlock v0.15.2 for the cases muster handles:
 //
 //   - INVALID_ARGUMENT when the first message is not a start message with
-//     uid and cmd set.
+//     uid set, and with cmd set unless shell is true (the real server
+//     accepts an empty cmd in shell mode).
 //   - UNKNOWN for an unknown microvm uid, and for a Result.Abort error that
 //     is not a status (the real server returns plain errors for lookup and
 //     guest-agent relay failures).

@@ -27,6 +27,7 @@ func TestCheckHost(t *testing.T) {
 		{version: "v0.15.2-rc.1", enabled: true, want: ErrUnsupportedVersion},
 		{version: "dev", enabled: true, want: ErrUnsupportedVersion, text: `"dev"`},
 		{version: "v0.15.2", enabled: false, want: ErrExecDisabled, text: "--enable-exec-api"},
+		{version: "v0.14.0", enabled: false, want: ErrUnsupportedVersion, text: "v0.14.0 is older than v0.15.2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {

@@ -35,10 +35,7 @@ func (e *Execer) CheckHost(ctx context.Context, host vmsource.HostInfo) error {
 	if err != nil {
 		return fmt.Errorf("flintlock: host %s (%s): server info: %w", host.Name, host.Address, err)
 	}
-	if !info.GetExec().GetEnabled() {
-		return hostError{ErrExecDisabled, fmt.Sprintf("flintlock: host %s (%s): exec api is disabled; start flintlockd with --enable-exec-api",
-			host.Name, host.Address)}
-	}
+	// The version comes first: an old flintlock has no exec api to enable.
 	raw := info.GetVersion().GetVersion()
 	v := raw
 	if !strings.HasPrefix(v, "v") {
@@ -51,6 +48,10 @@ func (e *Execer) CheckHost(ctx context.Context, host vmsource.HostInfo) error {
 	if semver.Compare(v, MinVersion) < 0 {
 		return hostError{ErrUnsupportedVersion, fmt.Sprintf("flintlock: host %s (%s): version %s is older than %s",
 			host.Name, host.Address, raw, MinVersion)}
+	}
+	if !info.GetExec().GetEnabled() {
+		return hostError{ErrExecDisabled, fmt.Sprintf("flintlock: host %s (%s): exec api is disabled; start flintlockd with --enable-exec-api",
+			host.Name, host.Address)}
 	}
 	return nil
 }
