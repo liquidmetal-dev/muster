@@ -188,11 +188,14 @@ func TestMaxDuration(t *testing.T) {
 func TestRunnerTakesOtherJob(t *testing.T) {
 	e := newEnv(t)
 	e.GitHub.NextRunner(fakegithub.Behavior{RunFor: time.Hour})
-	first, err := e.GitHub.QueueJob(testRepo, []string{"self-hosted", "linux"})
+	// The older job needs only "self-hosted", so the pool's runner can take
+	// it before the job that matches the pool's labels exactly.
+	other, err := e.GitHub.QueueJob(testRepo, []string{"self-hosted"})
 	if err != nil {
 		t.Fatalf("QueueJob: %v", err)
 	}
-	if _, err := e.GitHub.QueueJob(testRepo, []string{"self-hosted"}); err != nil {
+	trigger, err := e.GitHub.QueueJob(testRepo, []string{"self-hosted", "linux"})
+	if err != nil {
 		t.Fatalf("QueueJob: %v", err)
 	}
 	c := e.capture()
@@ -200,8 +203,15 @@ func TestRunnerTakesOtherJob(t *testing.T) {
 	id, runner, _ := e.running(c)
 	waitFor(t, func() bool { i, _ := e.info(id); return i.Busy })
 	for _, j := range e.GitHub.Jobs() {
-		if j.ID == first.ID && j.RunnerName != runner {
-			t.Fatalf("oldest job ran on %q, want %q", j.RunnerName, runner)
+		switch j.ID {
+		case other.ID:
+			if j.RunnerName != runner {
+				t.Fatalf("other job ran on %q, want %q", j.RunnerName, runner)
+			}
+		case trigger.ID:
+			if j.RunnerName != "" {
+				t.Fatalf("triggering job ran on %q, want still queued", j.RunnerName)
+			}
 		}
 	}
 	if a, nb := e.Registry.Counts(testPool); a != 1 || nb != 0 {
