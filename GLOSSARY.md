@@ -32,3 +32,26 @@ ends the session.
 
 **Adopted session**:
 A session muster finds in flight at startup and resumes in RUNNING without an exec stream.
+
+## Intake
+
+**Intake**:
+A source from which musterd learns which GitHub jobs are queued.
+_Avoid_: Source, feed, ingest
+
+**Webhook intake**:
+The intake that receives the `workflow_job` deliveries that GitHub sends to musterd.
+_Avoid_: Listener, receiver
+
+**Polling intake**:
+The intake that asks GitHub at an interval for the queued jobs of each configured repository.
+_Avoid_: Poller, reconciler, sync
+
+**Poll pass**:
+One run of the polling intake over all its configured repositories.
+_Avoid_: Poll cycle, sweep, tick
+
+**Listing**:
+The set of queued jobs that one repository returned during a poll pass, with the time musterd
+asked for it.
+_Avoid_: Snapshot, poll result
