@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -55,8 +57,8 @@ func TestListQueuedJobsPaginated(t *testing.T) {
 	if err != nil || len(got) != 150 {
 		t.Fatalf("ListQueuedJobs = %d, %v; want 150", len(got), err)
 	}
-	if n := e.Fake.RequestCount(fakegithub.PatternRuns); n != 2 {
-		t.Fatalf("run list requests = %d, want 2", n)
+	if n := e.Fake.RequestCount(fakegithub.PatternRuns); n != 3 {
+		t.Fatalf("run list requests = %d, want 3 (2 queued pages, 1 in_progress)", n)
 	}
 }
 
@@ -65,7 +67,11 @@ func TestListQueuedJobsPaginated(t *testing.T) {
 func TestListQueuedJobsJobPages(t *testing.T) {
 	var jobPages atomic.Int32
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v3/repos/acme/app/actions/runs", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/v3/repos/acme/app/actions/runs", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("status") != "queued" {
+			_ = json.NewEncoder(w).Encode(gogithub.WorkflowRuns{TotalCount: new(0)})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(gogithub.WorkflowRuns{TotalCount: new(1), WorkflowRuns: []*gogithub.WorkflowRun{{ID: new(int64(7)), Status: new("queued")}}})
 	})
 	var base string
@@ -150,5 +156,142 @@ func TestListQueuedJobsSkipsNonQueuedRuns(t *testing.T) {
 	got, err := c.ListQueuedJobs(context.Background(), "acme/app")
 	if err != nil || len(got) != 1 || got[0].JobID != waiting.ID {
 		t.Fatalf("ListQueuedJobs = %+v, %v; want only job %d", got, err, waiting.ID)
+	}
+}
+
+// runListHook wraps the fake so a test can act after the first run list
+// returns, and records the status query of each run list.
+type runListHook struct {
+	next       http.Handler
+	mu         sync.Mutex
+	statuses   []string
+	afterFirst func()
+}
+
+func (h *runListHook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.next.ServeHTTP(w, r)
+	if !strings.HasSuffix(r.URL.Path, "/actions/runs") {
+		return
+	}
+	h.mu.Lock()
+	h.statuses = append(h.statuses, r.URL.Query().Get("status"))
+	fn := h.afterFirst
+	h.afterFirst = nil
+	h.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+func hooked(t *testing.T, e env, afterFirst func()) (*github.Client, *runListHook) {
+	t.Helper()
+	h := &runListHook{next: e.Fake.Handler(), afterFirst: afterFirst}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	e.URL = srv.URL
+	return e.PATClient(t), h
+}
+
+func jobIDs(jobs []github.QueuedJob) []int64 {
+	out := make([]int64, 0, len(jobs))
+	for _, j := range jobs {
+		out = append(out, j.JobID)
+	}
+	return out
+}
+
+func queueRun(t *testing.T, e env, n int) []fakegithub.Job {
+	t.Helper()
+	first, err := e.Fake.QueueJob("acme/app", []string{"x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := []fakegithub.Job{first}
+	for range n - 1 {
+		j, err := e.Fake.QueueJobInRun(first.RunID, []string{"x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, j)
+	}
+	return out
+}
+
+func TestListQueuedJobsInProgressRun(t *testing.T) {
+	e := newEnv(t)
+	e.Fake.AddRepo("acme/app")
+	run := queueRun(t, e, 2)
+	if err := e.Fake.StartJob(run[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := e.PATClient(t).ListQueuedJobs(context.Background(), "acme/app")
+	if err != nil {
+		t.Fatalf("ListQueuedJobs: %v", err)
+	}
+	if len(got) != 1 || got[0].JobID != run[1].ID || got[0].RunID != run[0].RunID || !got[0].CreatedAt.Equal(startTime) {
+		t.Fatalf("jobs = %+v, want only job %d created at %v", got, run[1].ID, startTime)
+	}
+}
+
+func TestListQueuedJobsCreatedAt(t *testing.T) {
+	e := newEnv(t)
+	e.Fake.AddRepo("acme/app")
+	queueRun(t, e, 1)
+	e.Clock.Advance(5 * time.Minute)
+	queueRun(t, e, 1)
+	got, err := e.PATClient(t).ListQueuedJobs(context.Background(), "acme/app")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("ListQueuedJobs = %+v, %v", got, err)
+	}
+	if !got[0].CreatedAt.Equal(startTime) || !got[1].CreatedAt.Equal(startTime.Add(5*time.Minute)) {
+		t.Fatalf("CreatedAt = %v, %v", got[0].CreatedAt, got[1].CreatedAt)
+	}
+}
+
+func TestListQueuedJobsListsQueuedRunsFirst(t *testing.T) {
+	e := newEnv(t)
+	e.Fake.AddRepo("acme/app")
+	c, h := hooked(t, e, nil)
+	if _, err := c.ListQueuedJobs(context.Background(), "acme/app"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(h.statuses, []string{"queued", "in_progress"}) {
+		t.Fatalf("run list statuses = %v, want [queued in_progress]", h.statuses)
+	}
+}
+
+func TestListQueuedJobsRunStartedBetweenLists(t *testing.T) {
+	e := newEnv(t)
+	e.Fake.AddRepo("acme/app")
+	run := queueRun(t, e, 2)
+	c, _ := hooked(t, e, func() {
+		if err := e.Fake.StartJob(run[0].ID); err != nil {
+			t.Error(err)
+		}
+	})
+	got, err := c.ListQueuedJobs(context.Background(), "acme/app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := jobIDs(got); !slices.Equal(ids, []int64{run[1].ID}) {
+		t.Fatalf("jobs = %v, want [%d]", ids, run[1].ID)
+	}
+}
+
+func TestListQueuedJobsNoDuplicates(t *testing.T) {
+	e := newEnv(t)
+	e.Fake.AddRepo("acme/app")
+	run := queueRun(t, e, 3)
+	c, _ := hooked(t, e, func() {
+		if err := e.Fake.StartJob(run[0].ID); err != nil {
+			t.Error(err)
+		}
+	})
+	got, err := c.ListQueuedJobs(context.Background(), "acme/app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := jobIDs(got); !slices.Equal(ids, []int64{run[1].ID, run[2].ID}) {
+		t.Fatalf("jobs = %v, want each queued job of the run once", ids)
 	}
 }
