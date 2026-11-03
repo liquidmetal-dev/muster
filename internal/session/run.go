@@ -24,7 +24,7 @@ func (r *Registry) running(ctx context.Context, s *session, run *execRun, carry 
 	var graceC <-chan time.Time
 
 	apply := func(m mailbox) (State, Reason, bool) {
-		s.seen = s.seen || m.listed || m.online
+		s.observe(m)
 		if m.lost {
 			return Failed, ReasonVMLost, true
 		}
@@ -52,7 +52,7 @@ func (r *Registry) running(ctx context.Context, s *session, run *execRun, carry 
 			return Failed, ""
 		case res := <-execDone:
 			if res.err != nil {
-				s.log.Warn("exec stream broke; watching the runner through GitHub", "err", res.err)
+				s.logBrokenStream(res.err)
 				execDone = nil
 				continue
 			}

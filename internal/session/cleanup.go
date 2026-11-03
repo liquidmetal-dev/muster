@@ -48,12 +48,8 @@ func (r *Registry) retry(ctx context.Context, s *session, what string, f func() 
 			return false
 		}
 		s.log.Warn(what, "err", err)
-		t := r.clock.NewTimer(bo.next())
-		select {
-		case <-ctx.Done():
-			t.Stop()
+		if !r.sleep(ctx, bo.next()) {
 			return false
-		case <-t.C():
 		}
 	}
 }

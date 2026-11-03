@@ -28,12 +28,8 @@ func (r *Registry) watchEvents(ctx context.Context, pool string) {
 			return
 		}
 		r.log.Warn("VM event stream closed; subscribing again", "pool", pool, "err", err)
-		t := r.clock.NewTimer(bo.next())
-		select {
-		case <-ctx.Done():
-			t.Stop()
+		if !r.sleep(ctx, bo.next()) {
 			return
-		case <-t.C():
 		}
 	}
 }

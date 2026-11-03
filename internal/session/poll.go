@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 
+	"github.com/liquidmetal-dev/muster/internal/config"
+
 	"github.com/liquidmetal-dev/muster/internal/github"
 )
 
@@ -37,7 +39,7 @@ func (r *Registry) pollOnce(ctx context.Context) {
 	}
 	r.mu.Unlock()
 
-	prefix := "muster-" + r.cfg.Namespace + "-"
+	prefix := config.RunnerNamespacePrefix(r.cfg.Namespace)
 	for scope, sessions := range byScope {
 		runners, err := r.cfg.GitHub.ListRunners(ctx, scope, prefix)
 		if err != nil {

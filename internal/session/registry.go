@@ -23,10 +23,6 @@ import (
 // completes before it ends.
 const DefaultGrace = 30 * time.Second
 
-// DefaultPollInterval is the runner poll interval when Config.PollInterval
-// is zero.
-const DefaultPollInterval = config.DefaultPollInterval
-
 var (
 	// ErrNotRunning is returned before Run starts and after it stops.
 	ErrNotRunning = errors.New("session: registry is not running")
@@ -57,7 +53,7 @@ type Config struct {
 	// Defaults come from config.Parse.
 	Defaults config.Defaults
 	// PollInterval is the runner poll interval. Zero means
-	// DefaultPollInterval.
+	// config.DefaultPollInterval.
 	PollInterval time.Duration
 	// Grace is the wait after a job completes. Zero means DefaultGrace.
 	Grace  time.Duration
@@ -115,7 +111,7 @@ func New(cfg Config) (*Registry, error) {
 		return nil, errors.New("session: Source, GitHub and Demand are required")
 	}
 	if cfg.PollInterval == 0 {
-		cfg.PollInterval = DefaultPollInterval
+		cfg.PollInterval = config.DefaultPollInterval
 	}
 	if cfg.Grace == 0 {
 		cfg.Grace = DefaultGrace
@@ -235,4 +231,17 @@ func (r *Registry) setState(s *session, st State) {
 	r.mu.Lock()
 	s.state = st
 	r.mu.Unlock()
+}
+
+// sleep waits d on the registry clock and reports false when ctx ends
+// first.
+func (r *Registry) sleep(ctx context.Context, d time.Duration) bool {
+	t := r.clock.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C():
+		return true
+	}
 }

@@ -9,8 +9,8 @@ import (
 	"github.com/liquidmetal-dev/muster/internal/vmsource"
 )
 
-// session is one session. Fields under "registry mu" change only through
-// the Registry; the rest belong to the session goroutine.
+// Fields under "registry mu" are read by other goroutines through the
+// Registry; the rest belong to the session goroutine.
 type session struct {
 	id     string
 	pool   *pool
@@ -59,6 +59,16 @@ func newSession(id string, p *pool, runner string) *session {
 	}
 }
 
+// observe records that a poll listed the runner; only then can a later
+// absence end the session.
+func (s *session) observe(m mailbox) {
+	s.seen = s.seen || m.listed || m.online
+}
+
+func (s *session) logBrokenStream(err error) {
+	s.log.Warn("exec stream broke; watching the runner through GitHub", "err", err)
+}
+
 func (s *session) infoLocked() Info {
 	return Info{
 		ID:         s.id,
@@ -90,7 +100,6 @@ func (s *session) post(m mailbox) {
 	}
 }
 
-// drain returns the mailbox and empties it.
 func (s *session) drain() mailbox {
 	s.mbmu.Lock()
 	defer s.mbmu.Unlock()
@@ -135,15 +144,16 @@ func (r *Registry) drive(ctx context.Context, s *session) (State, Reason) {
 		s.log.Info("adopted session")
 		return r.running(ctx, s, nil, mailbox{})
 	}
-	run, carry, reason, ok := r.start(ctx, s)
-	if !ok {
+	run, carry, reason := r.start(ctx, s)
+	if run == nil {
 		return reason.outcome(), reason
 	}
 	defer run.close()
 	return r.running(ctx, s, run, carry)
 }
 
-// finish cleans up after the session and removes it.
+// When ctx ends during cleanup, OnEnd does not run and startup
+// reconciliation finishes the cleanup.
 func (r *Registry) finish(ctx context.Context, s *session, outcome State, reason Reason) {
 	r.mu.Lock()
 	s.state, s.reason = outcome, reason
