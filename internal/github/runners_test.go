@@ -163,9 +163,12 @@ func TestJITConfigRedacted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A variable format keeps vet from rejecting verbs a caller might misuse.
+	otherVerbs := "%d %x %q %10.3s %d"
 	_, dupErr := c.GenerateJITConfig(context.Background(), github.OrgScope("acme"), jit("secret"))
 	for name, out := range map[string]string{
 		"fmt":   fmt.Sprintf("%v %+v %#v %s", cfg, cfg, cfg, cfg.Encoded),
+		"verbs": fmt.Sprintf(otherVerbs, cfg.Encoded, cfg.Encoded, cfg.Encoded, cfg.Encoded, cfg),
 		"slog":  logged.String(),
 		"json":  jsonLogged.String() + string(marshalled),
 		"error": fmt.Sprint(dupErr),

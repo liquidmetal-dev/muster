@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -55,6 +56,10 @@ func (EncodedJITConfig) String() string { return redacted }
 
 // GoString keeps %#v from printing the value.
 func (EncodedJITConfig) GoString() string { return redacted }
+
+// Format keeps every fmt verb from printing the value, including verbs that
+// do not apply to strings, whose error output would otherwise show it.
+func (EncodedJITConfig) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, redacted) }
 
 // LogValue keeps slog from printing the value.
 func (EncodedJITConfig) LogValue() slog.Value { return slog.StringValue(redacted) }
