@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -192,6 +193,27 @@ func TestJITErrorOmitsResponseMessage(t *testing.T) {
 		if strings.Contains(err.Error(), "SECRETBODY") {
 			t.Errorf("status %d: error carries the response message: %v", status, err)
 		}
+	}
+}
+
+func TestJITSecondaryLimitErrorOmitsMessage(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v3/orgs/acme/actions/runners/generate-jitconfig", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit SECRETBODY","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := github.New(github.Config{Token: "x", BaseURL: srv.URL, MaxWait: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.GenerateJITConfig(context.Background(), github.OrgScope("acme"), jit("n"))
+	if !errors.Is(err, github.ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited", err)
+	}
+	if strings.Contains(err.Error(), "SECRETBODY") {
+		t.Errorf("error carries the response message: %v", err)
 	}
 }
 

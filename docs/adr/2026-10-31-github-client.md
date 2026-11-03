@@ -23,9 +23,11 @@ clock, which the tests need to control.
 3. Credentials are added only to requests for the origin of the configured base URL.
 4. Rate limiting and retries live in an `http.RoundTripper` under go-github, and go-github's own
    precheck is disabled (`WithDisableRateLimitCheck`), so there is one policy:
-   - 429, and 403 with `Retry-After` or `X-RateLimit-Remaining: 0`, are retried for every method,
-     because GitHub did not process the request. The wait is `Retry-After`, else the reset time,
-     else jittered exponential backoff. A `Retry-After` that does not parse uses the backoff.
+   - 429, and 403 with `Retry-After`, `X-RateLimit-Remaining: 0`, or a body whose
+     `documentation_url` names the secondary rate limits, are retried for every method, because
+     GitHub did not process the request. The wait is `Retry-After`, else the reset time, else one
+     minute for a secondary limit named only in the body (GitHub's guidance), else jittered
+     exponential backoff. A `Retry-After` that does not parse uses the backoff.
    - 5xx and network errors are retried only for GET, HEAD and DELETE. A JIT configuration POST
      that may have succeeded is never sent again.
    - A wait longer than 60 seconds returns `RateLimitedError` with the reset time, so the caller

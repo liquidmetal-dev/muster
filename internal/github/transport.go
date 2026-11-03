@@ -3,6 +3,7 @@ package github
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -110,8 +111,8 @@ func drain(resp *http.Response) {
 }
 
 // retryTransport applies the rate limit and retry policy to every attempt.
-// Rate limited responses (429, or 403 with Retry-After or no remaining
-// quota) are retried for every method, because GitHub did not process the
+// Rate limited responses (429, or 403 with Retry-After, no remaining quota,
+// or a secondary limit marked in the body) are retried for every method, because GitHub did not process the
 // request. Server errors and network failures are retried only for
 // idempotent methods, so a POST that may have succeeded is never sent again.
 type retryTransport struct {
@@ -223,14 +224,33 @@ func rateLimited(resp *http.Response) bool {
 	case http.StatusTooManyRequests:
 		return true
 	case http.StatusForbidden:
-		return resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0"
+		return resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0" || secondaryLimitInBody(resp)
 	}
 	return false
 }
 
+// secondaryLimitInBody reports whether GitHub marked a response as a
+// secondary rate limit only through the body's documentation_url, the same
+// test go-github uses. The body stays readable for the caller.
+func secondaryLimitInBody(resp *http.Response) bool {
+	data, err := io.ReadAll(resp.Body)
+	resp.Body = io.NopCloser(bytes.NewReader(data))
+	if err != nil {
+		return false
+	}
+	var body struct {
+		DocumentationURL string `json:"documentation_url"`
+	}
+	if json.Unmarshal(data, &body) != nil {
+		return false
+	}
+	return strings.HasSuffix(body.DocumentationURL, "secondary-rate-limits") || strings.HasSuffix(body.DocumentationURL, "#abuse-rate-limits")
+}
+
 // rateLimitWait reads the wait GitHub asked for: Retry-After in seconds or
-// as an HTTP date, else the primary limit's X-RateLimit-Reset. An
-// unparseable Retry-After falls back to backoff, not to the reset header.
+// as an HTTP date, else the primary limit's X-RateLimit-Reset, else one
+// minute for a secondary limit marked in the body. An unparseable
+// Retry-After falls back to backoff, not to the reset header.
 func (t *retryTransport) rateLimitWait(resp *http.Response) (time.Duration, bool) {
 	now := t.cfg.Clock.Now()
 	if v := resp.Header.Get("Retry-After"); v != "" {
@@ -246,6 +266,10 @@ func (t *retryTransport) rateLimitWait(resp *http.Response) (time.Duration, bool
 		if unix, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
 			return max(time.Unix(unix, 0).Sub(now), 0), true
 		}
+	}
+	// GitHub asks for at least one minute when a secondary limit names no wait.
+	if secondaryLimitInBody(resp) {
+		return time.Minute, true
 	}
 	return 0, false
 }

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -84,6 +86,39 @@ func TestRetryAfterUnparseableUsesBackoff(t *testing.T) {
 	}
 	if got := rec.got(); len(got) != 1 || got[0] > time.Second {
 		t.Fatalf("sleeps = %v, want one backoff of at most 1s", got)
+	}
+}
+
+const secondaryLimitBody = `{"message":"You have exceeded a secondary rate limit SECRETBODY","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`
+
+func TestRetry403SecondaryLimitInBody(t *testing.T) {
+	var calls atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v3/user", func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(secondaryLimitBody))
+			return
+		}
+		_, _ = w.Write([]byte(`{"login":"x"}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	var rec sleepRecorder
+	cfg := github.Config{Token: "x", BaseURL: srv.URL}
+	rec.install(&cfg)
+	c, err := github.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Ping(context.Background()); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+	if got := rec.got(); len(got) != 1 || got[0] != time.Minute {
+		t.Fatalf("sleeps = %v, want [1m]", got)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("calls = %d, want 2", n)
 	}
 }
 

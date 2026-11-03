@@ -8,7 +8,8 @@
 // expire. Credentials are sent only to the configured API origin.
 //
 // Every call goes through one retry policy: rate limited responses (429, or
-// 403 with Retry-After or no remaining quota) are retried for any method;
+// 403 with Retry-After, no remaining quota, or a secondary limit named in
+// the body) are retried for any method;
 // server and network errors only for GET, HEAD and DELETE, so a JIT
 // configuration request is never sent twice after a possible success. A
 // rate limit that asks for a wait longer than Config.MaxWait is returned as
