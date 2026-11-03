@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -136,5 +137,22 @@ func TestPATSource(t *testing.T) {
 	}
 	if n := len(e.Fake.Requests()); n != 0 {
 		t.Fatalf("requests = %d, want 0", n)
+	}
+}
+
+func TestAppTokenWaitHonoursContext(t *testing.T) {
+	e := newEnv(t)
+	c := e.AppClient(t)
+	e.Fake.Stall(fakegithub.PatternAccessToken, 2*time.Second)
+	go func() { _, _ = github.TokenFor(context.Background(), c) }()
+	e.Fake.WaitFor(t, 5*time.Second, func() bool { return e.Fake.RequestCount(fakegithub.PatternAccessToken) == 1 })
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := github.TokenFor(ctx, c); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want DeadlineExceeded", err)
+	}
+	if waited := time.Since(start); waited > time.Second {
+		t.Fatalf("waited %v behind another caller's refresh, want about 100ms", waited)
 	}
 }

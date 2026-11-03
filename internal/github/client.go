@@ -49,7 +49,7 @@ func New(cfg Config) (*Client, error) {
 		if err != nil {
 			return nil, err
 		}
-		c.src = &appSource{clock: cfg.Clock, exchange: c.exchangeToken}
+		c.src = newAppSource(cfg.Clock, c.exchangeToken)
 	} else {
 		c.src = patSource{token: cfg.Token}
 	}

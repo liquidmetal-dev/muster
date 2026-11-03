@@ -79,7 +79,7 @@ func (t *authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return resp, nil
 	}
 	drain(resp)
-	t.src.Invalidate(tok)
+	t.src.Invalidate(r.Context(), tok)
 	resp, _, err = t.send(r)
 	return resp, err
 }
