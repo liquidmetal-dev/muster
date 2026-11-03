@@ -156,12 +156,18 @@ func TestJITConfigRedacted(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret := cfg.Encoded.Reveal()
-	var logged bytes.Buffer
+	var logged, jsonLogged bytes.Buffer
 	slog.New(slog.NewTextHandler(&logged, nil)).Info("jit", slog.Any("cfg", cfg), slog.Any("encoded", cfg.Encoded))
+	slog.New(slog.NewJSONHandler(&jsonLogged, nil)).Info("jit", slog.Any("cfg", cfg), slog.Any("encoded", cfg.Encoded))
+	marshalled, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, dupErr := c.GenerateJITConfig(context.Background(), github.OrgScope("acme"), jit("secret"))
 	for name, out := range map[string]string{
 		"fmt":   fmt.Sprintf("%v %+v %#v %s", cfg, cfg, cfg, cfg.Encoded),
 		"slog":  logged.String(),
+		"json":  jsonLogged.String() + string(marshalled),
 		"error": fmt.Sprint(dupErr),
 	} {
 		if strings.Contains(out, secret) || strings.Contains(out, secret[:16]) {

@@ -61,6 +61,14 @@ func (EncodedJITConfig) GoString() string { return redacted }
 // LogValue keeps slog from printing the value.
 func (EncodedJITConfig) LogValue() slog.Value { return slog.StringValue(redacted) }
 
+// MarshalJSON keeps json.Marshal and slog's JSON handler, which marshals
+// structs without consulting LogValue on their fields, from printing the
+// value.
+func (EncodedJITConfig) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`), nil }
+
+// MarshalText keeps text encoders from printing the value.
+func (EncodedJITConfig) MarshalText() ([]byte, error) { return []byte(redacted), nil }
+
 // Reveal returns the encoded configuration for the runner.
 func (e EncodedJITConfig) Reveal() string { return string(e) }
 
