@@ -25,7 +25,7 @@ clock, which the tests need to control.
    precheck is disabled (`WithDisableRateLimitCheck`), so there is one policy:
    - 429, and 403 with `Retry-After` or `X-RateLimit-Remaining: 0`, are retried for every method,
      because GitHub did not process the request. The wait is `Retry-After`, else the reset time,
-     else jittered exponential backoff.
+     else jittered exponential backoff. A `Retry-After` that does not parse uses the backoff.
    - 5xx and network errors are retried only for GET, HEAD and DELETE. A JIT configuration POST
      that may have succeeded is never sent again.
    - A wait longer than 60 seconds returns `RateLimitedError` with the reset time, so the caller

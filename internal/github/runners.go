@@ -22,7 +22,6 @@ const (
 
 	// maxRunnerName is GitHub's limit on a runner name.
 	maxRunnerName = 64
-	// defaultWorkFolder is the runner's default work directory.
 	defaultWorkFolder = "_work"
 	// defaultRunnerGroupID is the group every repository runner joins.
 	defaultRunnerGroupID = 1

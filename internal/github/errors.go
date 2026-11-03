@@ -45,8 +45,8 @@ func (e *RateLimitedError) Error() string {
 // Is makes errors.Is(err, ErrRateLimited) match.
 func (e *RateLimitedError) Is(target error) bool { return target == ErrRateLimited }
 
-// mapError wraps a go-github error with the matching sentinel. Errors carry
-// GitHub's message and the request URL, never a request body.
+// mapError wraps a go-github error with the matching sentinel. The error
+// keeps the request URL and whatever message the go-github error carries.
 func mapError(err error) error {
 	if err == nil {
 		return nil
