@@ -155,8 +155,14 @@ func (r *Registry) Run(ctx context.Context) error {
 		return errors.New("session: Run called twice")
 	}
 	r.runCtx = ctx
-	r.wg.Add(1)
+	r.wg.Add(1 + len(r.pools))
 	r.mu.Unlock()
+	for name := range r.pools {
+		go func() {
+			defer r.wg.Done()
+			r.watchEvents(ctx, name)
+		}()
+	}
 	go func() {
 		defer r.wg.Done()
 		r.pollRunners(ctx)
