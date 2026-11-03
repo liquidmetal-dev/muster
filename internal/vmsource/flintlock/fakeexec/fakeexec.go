@@ -15,7 +15,8 @@
 // Every other MicroVM RPC returns UNIMPLEMENTED.
 //
 // Tests seed VMs with AddVM, set the reported version and exec state with
-// SetServerInfo, inject faults with FailNext, and observe traffic with
+// SetServerInfo, inject faults with FailNext, hold ServerInfo with
+// HoldServerInfo, and observe traffic with
 // Calls and ServerInfoCount. The server runs on any listener via Serve, or
 // on an in-process bufconn via ServeBufconn.
 package fakeexec
@@ -71,6 +72,7 @@ type Server struct {
 	failNext        map[string][]codes.Code
 	calls           []Call
 	serverInfoCount int
+	hold            chan struct{}
 
 	gs *grpc.Server
 }
@@ -115,6 +117,24 @@ func (s *Server) FailNext(method string, c codes.Code) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failNext[method] = append(s.failNext[method], c)
+}
+
+// HoldServerInfo makes ServerInfo block, after it is counted, until the
+// returned release is called.
+func (s *Server) HoldServerInfo() (release func()) {
+	ch := make(chan struct{})
+	s.mu.Lock()
+	s.hold = ch
+	s.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			s.hold = nil
+			s.mu.Unlock()
+			close(ch)
+		})
+	}
 }
 
 // Calls returns the ExecCommand calls that reached a handler, in order.
@@ -183,10 +203,18 @@ func (s *Server) takeFault(method string) error {
 }
 
 // ServerInfo reports the configured version and exec state.
-func (s *Server) ServerInfo(context.Context, *emptypb.Empty) (*mvmv1.ServerInfoResponse, error) {
+func (s *Server) ServerInfo(ctx context.Context, _ *emptypb.Empty) (*mvmv1.ServerInfoResponse, error) {
 	s.mu.Lock()
 	s.serverInfoCount++
+	hold := s.hold
 	s.mu.Unlock()
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			return nil, status.FromContextError(ctx.Err()).Err()
+		}
+	}
 	if err := s.takeFault("ServerInfo"); err != nil {
 		return nil, err
 	}

@@ -240,6 +240,7 @@ func TestExecCheckUnreachableThenRecovers(t *testing.T) {
 func TestConcurrentFirstExecSharesCheck(t *testing.T) {
 	fake := fakeexec.New()
 	fake.AddVM("vm-1", exitWith(0))
+	release := fake.HoldServerInfo()
 	e := newTestExecer(t, fake)
 	var wg sync.WaitGroup
 	errs := make(chan error, 10)
@@ -260,6 +261,14 @@ func TestConcurrentFirstExecSharesCheck(t *testing.T) {
 			}
 		}()
 	}
+	// While the first ServerInfo is held, every other caller is either
+	// waiting on it or would have sent its own call by now.
+	time.Sleep(200 * time.Millisecond)
+	if n := fake.ServerInfoCount(); n != 1 {
+		release()
+		t.Fatalf("ServerInfoCount while held = %d, want 1", n)
+	}
+	release()
 	wg.Wait()
 	close(errs)
 	for err := range errs {

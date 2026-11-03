@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	mvmv1 "github.com/liquidmetal-dev/flintlock/api/services/microvm/v1alpha1"
 	mvmexecv1 "github.com/liquidmetal-dev/flintlock/api/services/microvmexec/v1alpha1"
@@ -268,5 +269,28 @@ func TestExecAbort(t *testing.T) {
 		if f.kind == "exit" {
 			t.Fatalf("got exit frame %+v, want none", f)
 		}
+	}
+}
+
+func TestHoldServerInfo(t *testing.T) {
+	fake := fakeexec.New()
+	release := fake.HoldServerInfo()
+	client := mvmv1.NewMicroVMClient(dial(t, fake))
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.ServerInfo(t.Context(), &emptypb.Empty{})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("ServerInfo answered while held: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if n := fake.ServerInfoCount(); n != 1 {
+		t.Fatalf("ServerInfoCount = %d, want 1", n)
+	}
+	release()
+	if err := <-done; err != nil {
+		t.Fatalf("ServerInfo after release: %v", err)
 	}
 }
