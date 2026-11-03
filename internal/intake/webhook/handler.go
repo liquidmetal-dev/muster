@@ -25,7 +25,7 @@ const (
 
 // Demand receives the jobs the handler accepts. The calls must not block,
 // because the handler makes them before it responds (requirement
-// INTAKE-4). *demand.Registry satisfies it.
+// INTAKE-4).
 type Demand interface {
 	Queued(j demand.Job)
 	Started(id int64)
@@ -86,7 +86,7 @@ func New(cfg Config) (*Handler, error) {
 }
 
 // ServeHTTP checks one delivery and hands an accepted job to Demand. It
-// does not check the method; the server routes only POST here.
+// accepts any method, so the route must restrict it to POST.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	delivery := r.Header.Get("X-GitHub-Delivery")
 	event := r.Header.Get("X-GitHub-Event")
@@ -121,8 +121,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	action, wj, repo := ev.GetAction(), ev.GetWorkflowJob(), ev.GetRepo().GetFullName()
 	log := h.logger.With("delivery", delivery, "action", action, "job_id", wj.GetID(),
 		"repo", repo, "runner_name", wj.GetRunnerName())
+	var handOff func()
 	switch action {
-	case actionQueued, actionInProgress, actionCompleted:
+	case actionQueued:
+		handOff = func() {
+			h.demand.Queued(demand.Job{ID: wj.GetID(), Labels: wj.Labels, Repo: repo, QueuedAt: wj.GetCreatedAt().Time})
+		}
+	case actionInProgress:
+		handOff = func() { h.demand.Started(wj.GetID()) }
+	case actionCompleted:
+		handOff = func() { h.demand.Completed(wj.GetID()) }
 	default:
 		log.Debug("webhook: action ignored")
 		h.reply(w, http.StatusOK, action, OutcomeIgnored)
@@ -138,14 +146,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.reply(w, http.StatusOK, action, OutcomeDuplicate)
 		return
 	}
-	switch action {
-	case actionQueued:
-		h.demand.Queued(demand.Job{ID: wj.GetID(), Labels: wj.Labels, Repo: repo, QueuedAt: wj.GetCreatedAt().Time})
-	case actionInProgress:
-		h.demand.Started(wj.GetID())
-	case actionCompleted:
-		h.demand.Completed(wj.GetID())
-	}
+	handOff()
 	log.Debug("webhook: delivery handled")
 	h.reply(w, http.StatusOK, action, OutcomeHandled)
 }
