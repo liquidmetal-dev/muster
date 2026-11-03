@@ -95,7 +95,9 @@ func TestPollDoesNotBlockOnSlowSession(t *testing.T) {
 	slow := e.create("linux")
 	waitFor(t, func() bool { return e.GitHub.RequestCount(fakegithub.PatternRepoJITConfig) == 1 })
 	fast := e.create("linux2")
-	waitFor(t, func() bool { return e.GitHub.RequestCount(fakegithub.PatternRepoJITConfig) == 2 && len(e.GitHub.Runners()) == 1 })
+	waitFor(t, func() bool {
+		return e.GitHub.RequestCount(fakegithub.PatternRepoJITConfig) == 2 && len(e.GitHub.Runners()) == 1
+	})
 	e.Clock.Advance(2 * time.Second)
 	e.pollOnce()
 	e.waitState(fast, session.Running)

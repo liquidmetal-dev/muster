@@ -48,10 +48,11 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, Reason, boo
 			return nil, ReasonStartTimeout, false
 		case res := <-run.done:
 			s.log.Warn("runner exited before it came online", "exit_code", res.code, "err", res.err)
+			run.close()
 			return nil, ReasonExecError, false
 		case <-s.notify:
 			m := s.drain()
-			s.seen = s.seen || m.listed || m.online || m.busy
+			s.seen = s.seen || m.listed || m.online
 			if m.lost {
 				run.close()
 				return nil, ReasonVMLost, false

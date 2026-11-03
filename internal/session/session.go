@@ -134,8 +134,7 @@ func (r *Registry) drive(ctx context.Context, s *session) (State, Reason) {
 		return Failed, reason
 	}
 	defer run.close()
-	<-ctx.Done()
-	return Failed, ""
+	return r.running(ctx, s, run)
 }
 
 // finish cleans up after the session and removes it.

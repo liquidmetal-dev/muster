@@ -377,6 +377,25 @@ type recordingGitHub struct {
 	*github.Client
 	mu      sync.Mutex
 	encoded []string
+	hidden  map[string]bool
+}
+
+// hide makes ListRunners leave out the named runner, as GitHub does once a
+// runner is removed.
+func (g *recordingGitHub) hide(name string, hidden bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.hidden == nil {
+		g.hidden = map[string]bool{}
+	}
+	g.hidden[name] = hidden
+}
+
+func (g *recordingGitHub) ListRunners(ctx context.Context, s github.Scope, prefix string) ([]github.Runner, error) {
+	rs, err := g.Client.ListRunners(ctx, s, prefix)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return slices.DeleteFunc(rs, func(r github.Runner) bool { return g.hidden[r.Name] }), err
 }
 
 func (g *recordingGitHub) GenerateJITConfig(ctx context.Context, s github.Scope, r github.JITRequest) (github.JITConfig, error) {
@@ -431,6 +450,8 @@ func (c *capture) waitStdin(t *testing.T) {
 		t.Fatal("exec handler did not read stdin to EOF")
 	}
 }
+
+func (c *capture) exit(code int32) { c.exitCode <- code }
 
 func (c *capture) got() (*mvmexecv1.ExecStart, []byte) {
 	c.mu.Lock()
