@@ -176,6 +176,22 @@ func TestJITConfigRedacted(t *testing.T) {
 	}
 }
 
+func TestJITErrorOmitsResponseMessage(t *testing.T) {
+	e := newEnv(t)
+	e.Fake.AddOrg("acme")
+	c := e.AppClient(t)
+	for _, status := range []int{http.StatusConflict, http.StatusUnprocessableEntity} {
+		e.Fake.FailNext(fakegithub.PatternOrgJITConfig, fakegithub.Fault{Status: status, Message: "echo SECRETBODY"})
+		_, err := c.GenerateJITConfig(context.Background(), github.OrgScope("acme"), jit("n"))
+		if err == nil {
+			t.Fatalf("status %d: want error", status)
+		}
+		if strings.Contains(err.Error(), "SECRETBODY") {
+			t.Errorf("status %d: error carries the response message: %v", status, err)
+		}
+	}
+}
+
 func TestNoRetry5xxPost(t *testing.T) {
 	e := newEnv(t)
 	e.Fake.AddOrg("acme")

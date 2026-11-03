@@ -98,6 +98,16 @@ func statusOf(err error) int {
 	return 0
 }
 
+// withoutResponseMessage keeps the status of a GitHub error response and
+// drops its message and error details, which can echo the request.
+func withoutResponseMessage(err error) error {
+	var resp *gogithub.ErrorResponse
+	if errors.As(err, &resp) && resp.Response != nil {
+		return &gogithub.ErrorResponse{Response: resp.Response}
+	}
+	return err
+}
+
 // GenerateJITConfig registers a runner and returns its JIT configuration.
 // The request is never retried after a server error, so one call registers
 // at most one runner.
@@ -125,6 +135,7 @@ func (c *Client) GenerateJITConfig(ctx context.Context, s Scope, r JITRequest) (
 	} else {
 		out, _, err = c.gh.Actions.CreateRepoJITConfig(withEndpoint(ctx, endpointRepoJITConfig), s.Owner, s.Repo, body)
 	}
+	err = withoutResponseMessage(err)
 	if statusOf(err) == http.StatusConflict {
 		return JITConfig{}, fmt.Errorf("%w: %q in %s: %w", ErrRunnerExists, r.Name, s, err)
 	}
