@@ -28,6 +28,8 @@ type session struct {
 	runnerID int64
 	// seen is set once GitHub has listed the runner.
 	seen bool
+	// adopted sessions start in RUNNING with no exec stream.
+	adopted bool
 
 	mbmu   sync.Mutex
 	mb     mailbox
@@ -105,6 +107,9 @@ func (s *session) drain() mailbox {
 func (r *Registry) runSession(ctx context.Context, s *session) {
 	defer r.wg.Done()
 	s.log = r.log.With("session", s.id, "pool", s.pool.cfg.Name, "runner", s.runner)
+	if s.adopted {
+		s.log = s.log.With("vm", s.vmID)
+	}
 	outcome, reason := r.drive(ctx, s)
 	if ctx.Err() != nil {
 		return
@@ -115,8 +120,10 @@ func (r *Registry) runSession(ctx context.Context, s *session) {
 // drive runs the session through its active states and returns how it
 // ended.
 func (r *Registry) drive(ctx context.Context, s *session) (State, Reason) {
-	if reason, ok := r.claim(ctx, s); !ok {
-		return Failed, reason
+	if !s.adopted {
+		if reason, ok := r.claim(ctx, s); !ok {
+			return Failed, reason
+		}
 	}
 	hbCtx, stopHeartbeat := context.WithCancel(ctx)
 	hbDone := make(chan struct{})
@@ -129,6 +136,10 @@ func (r *Registry) drive(ctx context.Context, s *session) (State, Reason) {
 		<-hbDone
 	}()
 
+	if s.adopted {
+		s.log.Info("adopted session")
+		return r.running(ctx, s, nil)
+	}
 	run, reason, ok := r.start(ctx, s)
 	if !ok {
 		return Failed, reason
