@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -21,7 +20,7 @@ const (
 	endpointOrgRunnerGroup = "GET /orgs/{org}/actions/runner-groups"
 
 	// maxRunnerName is GitHub's limit on a runner name.
-	maxRunnerName = 64
+	maxRunnerName     = 64
 	defaultWorkFolder = "_work"
 	// defaultRunnerGroupID is the group every repository runner joins.
 	defaultRunnerGroupID = 1
@@ -89,19 +88,10 @@ func (s Scope) valid() error {
 	return nil
 }
 
-func statusOf(err error) int {
-	var resp *gogithub.ErrorResponse
-	if errors.As(err, &resp) && resp.Response != nil {
-		return resp.Response.StatusCode
-	}
-	return 0
-}
-
 // withoutResponseMessage keeps the status of a GitHub error response and
 // drops its message and error details, which can echo the request.
 func withoutResponseMessage(err error) error {
-	var resp *gogithub.ErrorResponse
-	if errors.As(err, &resp) && resp.Response != nil {
+	if resp := errorResponse(err); resp != nil {
 		return &gogithub.ErrorResponse{Response: resp.Response}
 	}
 	return err

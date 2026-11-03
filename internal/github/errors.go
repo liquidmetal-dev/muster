@@ -60,14 +60,28 @@ func mapError(err error) error {
 	if errors.As(err, &primary) || errors.As(err, &secondary) {
 		return fmt.Errorf("%w: %w", ErrRateLimited, err)
 	}
-	var resp *gogithub.ErrorResponse
-	if errors.As(err, &resp) && resp.Response != nil {
-		switch resp.Response.StatusCode {
-		case http.StatusNotFound:
-			return fmt.Errorf("%w: %w", ErrNotFound, err)
-		case http.StatusUnauthorized:
-			return fmt.Errorf("%w: %w", ErrUnauthorized, err)
-		}
+	switch statusOf(err) {
+	case http.StatusNotFound:
+		return fmt.Errorf("%w: %w", ErrNotFound, err)
+	case http.StatusUnauthorized:
+		return fmt.Errorf("%w: %w", ErrUnauthorized, err)
 	}
 	return fmt.Errorf("github: %w", err)
+}
+
+// errorResponse returns the GitHub error response inside err, or nil when
+// err has none or it has no HTTP response.
+func errorResponse(err error) *gogithub.ErrorResponse {
+	var resp *gogithub.ErrorResponse
+	if errors.As(err, &resp) && resp.Response != nil {
+		return resp
+	}
+	return nil
+}
+
+func statusOf(err error) int {
+	if resp := errorResponse(err); resp != nil {
+		return resp.Response.StatusCode
+	}
+	return 0
 }
