@@ -53,3 +53,13 @@ const (
 	ReasonStartTimeout  Reason = "start_timeout"
 	ReasonVMLost        Reason = "vm_lost"
 )
+
+// outcome is the state a session ends in for this reason.
+func (r Reason) outcome() State {
+	switch r {
+	case ReasonExecExit, ReasonJobCompleted, ReasonRunnerAbsent, ReasonIdleTimeout, ReasonMaxDuration:
+		return Ended
+	default:
+		return Failed
+	}
+}

@@ -45,6 +45,19 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 	r.setState(s, Starting)
 	timeout := r.clock.NewTimer(r.cfg.Defaults.StartTimeout.Duration())
 	defer timeout.Stop()
+	maxD := r.clock.NewTimer(r.untilMaxDuration(s))
+	defer maxD.Stop()
+	// expired prefers a due deadline when select also had a result ready.
+	expired := func() (Reason, bool) {
+		select {
+		case <-maxD.C():
+			return ReasonMaxDuration, true
+		case <-timeout.C():
+			return ReasonStartTimeout, true
+		default:
+			return "", false
+		}
+	}
 
 	launchCtx, cancelLaunch := context.WithCancel(ctx)
 	result := make(chan launched, 1)
@@ -66,6 +79,9 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 	case <-timeout.C():
 		abandon()
 		return nil, mailbox{}, ReasonStartTimeout, false
+	case <-maxD.C():
+		abandon()
+		return nil, mailbox{}, ReasonMaxDuration, false
 	case l := <-result:
 		if !l.ok {
 			cancelLaunch()
@@ -73,6 +89,10 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 		}
 		run = l.run
 		run.cancel = cancelLaunch
+		if reason, ok := expired(); ok {
+			run.close()
+			return nil, mailbox{}, reason, false
+		}
 	}
 
 	var carry mailbox
@@ -84,6 +104,9 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 		case <-timeout.C():
 			run.close()
 			return nil, mailbox{}, ReasonStartTimeout, false
+		case <-maxD.C():
+			run.close()
+			return nil, mailbox{}, ReasonMaxDuration, false
 		case res := <-run.done:
 			s.log.Warn("runner exited before it came online", "exit_code", res.code, "err", res.err)
 			run.close()
@@ -98,6 +121,10 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 			carry.completed = carry.completed || m.completed
 			carry.busy = carry.busy || m.busy || m.completed
 			if m.online || carry.busy {
+				if reason, ok := expired(); ok {
+					run.close()
+					return nil, mailbox{}, reason, false
+				}
 				r.mu.Lock()
 				s.state = Running
 				s.busy = s.busy || carry.busy

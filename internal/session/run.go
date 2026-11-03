@@ -19,7 +19,7 @@ func (r *Registry) running(ctx context.Context, s *session, run *execRun, carry 
 		idle.Stop()
 		idleC = nil
 	}
-	maxD := r.clock.NewTimer(max(s.claimedAt.Add(s.pool.cfg.MaxSessionDuration.Duration()).Sub(r.clock.Now()), 0))
+	maxD := r.clock.NewTimer(r.untilMaxDuration(s))
 	defer maxD.Stop()
 	var graceC <-chan time.Time
 
@@ -70,6 +70,10 @@ func (r *Registry) running(ctx context.Context, s *session, run *execRun, carry 
 			}
 		}
 	}
+}
+
+func (r *Registry) untilMaxDuration(s *session) time.Duration {
+	return max(s.claimedAt.Add(s.pool.cfg.MaxSessionDuration.Duration()).Sub(r.clock.Now()), 0)
 }
 
 func (r *Registry) isBusy(s *session) bool {

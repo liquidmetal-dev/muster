@@ -13,6 +13,7 @@ import (
 	mvmexecv1 "github.com/liquidmetal-dev/flintlock/api/services/microvmexec/v1alpha1"
 	"google.golang.org/grpc/codes"
 
+	"github.com/liquidmetal-dev/muster/internal/config"
 	"github.com/liquidmetal-dev/muster/internal/fakegithub"
 	"github.com/liquidmetal-dev/muster/internal/session"
 	"github.com/liquidmetal-dev/muster/internal/vmsource/flintlock/fakeexec"
@@ -270,5 +271,21 @@ func TestStartTimeoutBoundsLaunch(t *testing.T) {
 	}
 	if n := len(e.GitHub.Runners()); n != 0 {
 		t.Fatalf("runners after start timeout = %d, want 0", n)
+	}
+}
+
+func TestMaxDurationWhileStarting(t *testing.T) {
+	p := testPoolConfig(testPool)
+	p.MaxSessionDuration = config.Duration(time.Minute)
+	e := newEnv(t, withPools(p))
+	e.GitHub.NextRunner(fakegithub.Behavior{NeverRegister: true})
+	e.start()
+	e.create(testPool)
+	got := e.driveEnd(10 * time.Second)
+	if got.State != session.Ended || got.Reason != session.ReasonMaxDuration {
+		t.Fatalf("ended = %v %v, want ENDED max_duration", got.State, got.Reason)
+	}
+	if el := e.elapsed(); el >= 2*time.Minute {
+		t.Fatalf("ended after %v, want before the 2m start timeout", el)
 	}
 }

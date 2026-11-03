@@ -137,7 +137,7 @@ func (r *Registry) drive(ctx context.Context, s *session) (State, Reason) {
 	}
 	run, carry, reason, ok := r.start(ctx, s)
 	if !ok {
-		return Failed, reason
+		return reason.outcome(), reason
 	}
 	defer run.close()
 	return r.running(ctx, s, run, carry)
