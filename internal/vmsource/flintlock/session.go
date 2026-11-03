@@ -107,6 +107,10 @@ func (s *session) receive() {
 			if errors.Is(err, io.EOF) {
 				err = io.ErrUnexpectedEOF
 			}
+			if gotErrFrame {
+				s.finish(-1, fmt.Errorf("flintlock: exec error %q, then ended without exit code: %w", errFrame, wrapStatus(err)))
+				return
+			}
 			s.finish(-1, fmt.Errorf("flintlock: exec ended without exit code: %w", wrapStatus(err)))
 			return
 		}

@@ -197,6 +197,17 @@ func TestExecAbortWithoutExitCode(t *testing.T) {
 	}
 }
 
+func TestExecErrorFrameThenAbort(t *testing.T) {
+	fake := fakeexec.New()
+	fake.AddVM("vm-1", func(context.Context, *mvmexecv1.ExecStart, io.Reader, io.Writer, io.Writer) fakeexec.Result {
+		return fakeexec.Result{ErrorFrame: "boom", Abort: status.Error(codes.Unknown, "relay")}
+	})
+	o := drain(t, execOK(t, newTestExecer(t, fake), vmsource.ExecSpec{Cmd: "x"}))
+	if o.code != -1 || status.Code(o.err) != codes.Unknown || !strings.Contains(o.err.Error(), "boom") {
+		t.Fatalf("Wait = %d, %v; want -1, code Unknown and an error with boom", o.code, o.err)
+	}
+}
+
 func TestExecAfterCloseDoesNotDial(t *testing.T) {
 	fake := fakeexec.New()
 	fake.AddVM("vm-1", exitWith(0))

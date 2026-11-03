@@ -45,7 +45,8 @@ type Result struct {
 	ErrorFrame string
 	// SendErrorFrame sends the error frame even when ErrorFrame is empty.
 	SendErrorFrame bool
-	// Abort, when set, is returned from the RPC and no exit_code is sent.
+	// Abort, when set, is returned from the RPC after any error frame, and
+	// no exit_code is sent.
 	Abort error
 }
 
@@ -283,13 +284,13 @@ func (s *Server) ExecCommand(stream mvmexecv1.MicroVMExec_ExecCommandServer) err
 	s.calls = append(s.calls, Call{Start: start, Stdin: stdin, StdinEOF: eof, StdinFrames: frames})
 	s.mu.Unlock()
 
-	if res.Abort != nil {
-		return res.Abort
-	}
 	if res.ErrorFrame != "" || res.SendErrorFrame {
 		if err := out.send(&mvmexecv1.ExecCommandResponse{Payload: &mvmexecv1.ExecCommandResponse_Error{Error: res.ErrorFrame}}); err != nil {
 			return err
 		}
+	}
+	if res.Abort != nil {
+		return res.Abort
 	}
 	return out.send(&mvmexecv1.ExecCommandResponse{Payload: &mvmexecv1.ExecCommandResponse_ExitCode{ExitCode: res.ExitCode}})
 }
