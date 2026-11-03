@@ -279,9 +279,9 @@ is reachable and GitHub authentication works.
 
 ## 13. Milestones
 
-- `v0.1.0`: first job end to end. musterd with the battery source, webhook and polling
-  intake, count-based dispatch, sessions, startup reconciliation, metrics, the `minimal`
+- `v0.1.0`: first job end to end. musterd with the battery source, webhook (with optional
+  TLS) and polling intake, count-based dispatch, sessions, startup reconciliation, metrics, the `minimal`
   image on amd64, the fake GitHub and the e2e suite, binaries and container, quick start.
 - `v0.2.0`: `full` image, arm64 images and an arm64 kernel from mikrolite-images, gRPC API
-  and `musterctl`, `.deb` and `.rpm` packages, built-in webhook TLS.
+  and `musterctl`, `.deb` and `.rpm` packages.
 - `v0.3.0`: the acceptance-tests suite.
