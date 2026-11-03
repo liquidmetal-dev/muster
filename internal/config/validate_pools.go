@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode"
@@ -44,6 +45,15 @@ func validatePools(cfg *Config, errs *errorList) {
 			errs.add(pp+".max_concurrent", "must be at least 1")
 		}
 		validateHosts(pp+".flintlock_hosts", p.FlintlockHosts, errs)
+		if p.MaxSessionDuration <= 0 {
+			errs.add(pp+".max_session_duration", "must be positive")
+		}
+		if !isLocalPath(p.WorkFolder) {
+			errs.add(pp+".work_folder", "must be a relative path inside the runner directory")
+		}
+		if p.Name != "" && len(RunnerNamePrefix(cfg.Battery.Namespace, p.Name))+SessionIDLen > maxRunnerName {
+			errs.add(pp+".name", `runner names "muster-<namespace>-<pool>-<%d-character session id>" must be at most %d characters; shorten the pool name or battery.namespace`, SessionIDLen, maxRunnerName)
+		}
 	}
 }
 
@@ -109,4 +119,8 @@ func validateHosts(path string, hosts []string, errs *errorList) {
 		}
 		seen[h] = i
 	}
+}
+
+func isLocalPath(p string) bool {
+	return p != "" && filepath.IsLocal(p)
 }

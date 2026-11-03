@@ -24,6 +24,7 @@ const (
 	DefaultStartTimeout       = 2 * time.Minute
 	DefaultIdleTimeout        = 5 * time.Minute
 	DefaultMaxSessionDuration = 6 * time.Hour
+	DefaultWorkFolder         = "_work"
 )
 
 // Parse decodes a configuration, applies defaults and runs every static
@@ -118,6 +119,12 @@ func applyDefaults(cfg *Config) {
 		p := &cfg.Pools[i]
 		if p.MaxConcurrent == 0 && p.Size > 0 {
 			p.MaxConcurrent = 2 * p.Size
+		}
+		if p.MaxSessionDuration == 0 {
+			p.MaxSessionDuration = cfg.Defaults.MaxSessionDuration
+		}
+		if p.WorkFolder == "" {
+			p.WorkFolder = DefaultWorkFolder
 		}
 	}
 }
