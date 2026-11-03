@@ -64,3 +64,44 @@ type hostError struct {
 
 func (e hostError) Error() string { return e.msg }
 func (e hostError) Unwrap() error { return e.sentinel }
+
+// checkCall is one ServerInfo check that concurrent callers share.
+type checkCall struct {
+	done chan struct{}
+	err  error
+}
+
+// ensureChecked runs CheckHost once per host until it passes. Callers that
+// arrive while a check runs wait for its result.
+func (e *Execer) ensureChecked(ctx context.Context, host vmsource.HostInfo) error {
+	k := keyOf(host)
+	e.mu.Lock()
+	if e.checked[k] {
+		e.mu.Unlock()
+		return nil
+	}
+	call, running := e.inflight[k]
+	if !running {
+		call = &checkCall{done: make(chan struct{})}
+		e.inflight[k] = call
+	}
+	e.mu.Unlock()
+
+	if !running {
+		call.err = e.CheckHost(ctx, host)
+		e.mu.Lock()
+		if call.err == nil {
+			e.checked[k] = true
+		}
+		delete(e.inflight, k)
+		e.mu.Unlock()
+		close(call.done)
+	}
+
+	select {
+	case <-call.done:
+		return call.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}

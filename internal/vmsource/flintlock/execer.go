@@ -23,8 +23,10 @@ type Execer struct {
 	cfg    config.Flintlock
 	logger *slog.Logger
 
-	mu    sync.Mutex
-	conns map[hostKey]*grpc.ClientConn
+	mu       sync.Mutex
+	conns    map[hostKey]*grpc.ClientConn
+	checked  map[hostKey]bool
+	inflight map[hostKey]*checkCall
 
 	// dialOptions is appended after the credentials. Only in-package tests
 	// can set it.
@@ -57,9 +59,11 @@ func NewExecer(cfg config.Flintlock, opts ...Option) (*Execer, error) {
 		}
 	}
 	e := &Execer{
-		cfg:    cfg,
-		logger: slog.Default(),
-		conns:  map[hostKey]*grpc.ClientConn{},
+		cfg:      cfg,
+		logger:   slog.Default(),
+		conns:    map[hostKey]*grpc.ClientConn{},
+		checked:  map[hostKey]bool{},
+		inflight: map[hostKey]*checkCall{},
 	}
 	for _, o := range opts {
 		o(e)
