@@ -10,7 +10,7 @@ import (
 	"github.com/google/go-github/v93/github"
 )
 
-// Job is a snapshot of one workflow job. Each job is the only job of its run.
+// Job is a snapshot of one workflow job.
 type Job struct {
 	ID, RunID int64
 	// Repo is "owner/name".
@@ -18,7 +18,7 @@ type Job struct {
 	Labels []string
 	// Status is "queued", "in_progress" or "completed".
 	Status string
-	// Conclusion is "", "success" or "failure".
+	// Conclusion is "", "success", "failure" or "cancelled".
 	Conclusion string
 	RunnerID   int64
 	RunnerName string
@@ -39,6 +39,8 @@ const (
 	jobQueued     = "queued"
 	jobInProgress = "in_progress"
 	jobCompleted  = "completed"
+
+	conclusionCancelled = "cancelled"
 )
 
 // QueueJob stores a queued job for repo with labels as its own run, delivers
@@ -53,15 +55,43 @@ func (s *Server) QueueJob(repo string, labels []string) (Job, error) {
 		s.mu.Unlock()
 		return Job{}, fmt.Errorf("fakegithub: QueueJob: unknown repo %q", repo)
 	}
+	js := s.addJobLocked(s.nextIDLocked(), repo, labels)
+	return s.announce(js), nil
+}
+
+// QueueJobInRun adds a queued job with labels to the existing run runID, in
+// that run's repository, delivers the signed workflow_job.queued webhook,
+// and returns the job. It fails when the run is unknown or labels is empty.
+func (s *Server) QueueJobInRun(runID int64, labels []string) (Job, error) {
+	if len(labels) == 0 {
+		return Job{}, fmt.Errorf("fakegithub: QueueJobInRun(%d): labels must not be empty", runID)
+	}
+	s.mu.Lock()
+	ids, ok := s.runs[runID]
+	if !ok {
+		s.mu.Unlock()
+		return Job{}, fmt.Errorf("fakegithub: QueueJobInRun: unknown run %d", runID)
+	}
+	js := s.addJobLocked(runID, s.jobs[ids[0]].Repo, labels)
+	return s.announce(js), nil
+}
+
+func (s *Server) addJobLocked(runID int64, repo string, labels []string) *jobState {
 	js := &jobState{Job: Job{
-		RunID:  s.nextIDLocked(),
+		RunID:  runID,
 		Repo:   repo,
 		Labels: append([]string(nil), labels...),
 		Status: jobQueued,
 	}, createdAt: s.clock.Now()}
 	js.ID = s.nextIDLocked()
 	s.jobs[js.ID] = js
-	s.runs[js.RunID] = js.ID
+	s.runs[runID] = append(s.runs[runID], js.ID)
+	return js
+}
+
+// announce is called with s.mu held and releases it. It delivers the
+// queued webhook and only then lets runners pair with the job.
+func (s *Server) announce(js *jobState) Job {
 	snap := js.snapshot()
 	copyJS := *js
 	s.mu.Unlock()
@@ -72,7 +102,44 @@ func (s *Server) QueueJob(repo string, labels []string) (Job, error) {
 	js.announced = true
 	s.mu.Unlock()
 	s.wake()
-	return snap, nil
+	return snap
+}
+
+// StartJob moves the queued job id to in_progress without a runner and
+// delivers the signed workflow_job.in_progress webhook.
+func (s *Server) StartJob(id int64) error {
+	return s.moveQueued("StartJob", id, func(js *jobState) {
+		js.Status = jobInProgress
+		js.startedAt = s.clock.Now()
+	})
+}
+
+// CancelJob moves the queued job id to completed with conclusion cancelled
+// and delivers the signed workflow_job.completed webhook.
+func (s *Server) CancelJob(id int64) error {
+	return s.moveQueued("CancelJob", id, func(js *jobState) {
+		js.Status = jobCompleted
+		js.Conclusion = conclusionCancelled
+		js.completedAt = s.clock.Now()
+	})
+}
+
+// moveQueued accepts only a queued job: a started job can hold a runner
+// whose lifecycle would complete it again.
+func (s *Server) moveQueued(op string, id int64, move func(*jobState)) error {
+	s.mu.Lock()
+	js, ok := s.jobs[id]
+	if !ok || js.Status != jobQueued {
+		s.mu.Unlock()
+		return fmt.Errorf("fakegithub: %s: job %d is not queued", op, id)
+	}
+	move(js)
+	copyJS := *js
+	s.mu.Unlock()
+
+	s.deliver(copyJS.Status, copyJS)
+	s.wake()
+	return nil
 }
 
 // Jobs returns a snapshot of every job, ordered by id.
@@ -107,17 +174,19 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request, _ authInfo) 
 	status := r.URL.Query().Get("status")
 	s.mu.Lock()
 	var runs []*github.WorkflowRun
-	for _, j := range s.jobs {
-		if j.Repo != scope.Repo || (status != "" && j.Status != status) {
+	for runID, ids := range s.runs {
+		first := s.jobs[ids[0]]
+		runStatus, conclusion := s.runStateLocked(ids)
+		if first.Repo != scope.Repo || (status != "" && runStatus != status) {
 			continue
 		}
 		runs = append(runs, &github.WorkflowRun{
-			ID:         new(j.RunID),
+			ID:         new(runID),
 			Name:       new("run"),
-			Status:     new(j.Status),
-			Conclusion: optString(j.Conclusion),
-			Repository: &github.Repository{FullName: new(j.Repo)},
-			CreatedAt:  &github.Timestamp{Time: j.createdAt},
+			Status:     new(runStatus),
+			Conclusion: optString(conclusion),
+			Repository: &github.Repository{FullName: new(first.Repo)},
+			CreatedAt:  &github.Timestamp{Time: first.createdAt},
 		})
 	}
 	s.mu.Unlock()
@@ -125,6 +194,36 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request, _ authInfo) 
 	lo, hi, link := paginate(r, len(runs))
 	setLink(w, link)
 	writeJSON(w, http.StatusOK, &github.WorkflowRuns{TotalCount: new(len(runs)), WorkflowRuns: runs[lo:hi]})
+}
+
+// runStateLocked derives a run's status from its jobs as GitHub does: a run
+// is in progress once any job has started and until every job completes.
+// A completed run takes the conclusion of its last completed job.
+func (s *Server) runStateLocked(ids []int64) (status, conclusion string) {
+	var queued, running, completed int
+	var last *jobState
+	for _, id := range ids {
+		j := s.jobs[id]
+		switch j.Status {
+		case jobQueued:
+			queued++
+		case jobInProgress:
+			running++
+		default:
+			completed++
+			if last == nil || !j.completedAt.Before(last.completedAt) {
+				last = j
+			}
+		}
+	}
+	switch {
+	case completed == len(ids):
+		return jobCompleted, last.Conclusion
+	case running > 0 || completed > 0:
+		return jobInProgress, ""
+	default:
+		return jobQueued, ""
+	}
 }
 
 func (s *Server) handleRunJobs(w http.ResponseWriter, r *http.Request, _ authInfo) {
@@ -135,17 +234,18 @@ func (s *Server) handleRunJobs(w http.ResponseWriter, r *http.Request, _ authInf
 	}
 	runID, err := strconv.ParseInt(r.PathValue("run_id"), 10, 64)
 	s.mu.Lock()
-	js, found := s.jobs[s.runs[runID]]
-	var out *github.WorkflowJob
-	if found && js.Repo == scope.Repo {
-		out = toGitHubJob(js)
+	var out []*github.WorkflowJob
+	if ids := s.runs[runID]; len(ids) > 0 && s.jobs[ids[0]].Repo == scope.Repo {
+		for _, id := range ids {
+			out = append(out, toGitHubJob(s.jobs[id]))
+		}
 	}
 	s.mu.Unlock()
 	if err != nil || out == nil {
 		writeError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, &github.Jobs{TotalCount: new(1), Jobs: []*github.WorkflowJob{out}})
+	writeJSON(w, http.StatusOK, &github.Jobs{TotalCount: new(len(out)), Jobs: out})
 }
 
 func toGitHubJob(j *jobState) *github.WorkflowJob {

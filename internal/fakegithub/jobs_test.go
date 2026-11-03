@@ -108,3 +108,123 @@ func TestRunsPagination(t *testing.T) {
 		t.Fatalf("page 2: %d runs next %d err %v", len(p2.WorkflowRuns), r2.NextPage, err)
 	}
 }
+
+func runsWithStatus(t *testing.T, e env, status string) []*github.WorkflowRun {
+	t.Helper()
+	runs, _, err := e.client.Actions.ListRepositoryWorkflowRuns(ctx(), "liquidmetal-dev", "muster",
+		&github.ListWorkflowRunsOptions{Status: status})
+	if err != nil {
+		t.Fatalf("list %s runs: %v", status, err)
+	}
+	return runs.WorkflowRuns
+}
+
+func TestRunStatusFollowsItsJobs(t *testing.T) {
+	e := start(t)
+	seed(e)
+	a := queue(t, e, orgRepo, "x")
+	b, err := e.fake.QueueJobInRun(a.RunID, []string{"y"})
+	if err != nil {
+		t.Fatalf("QueueJobInRun: %v", err)
+	}
+	if b.RunID != a.RunID || b.Repo != orgRepo || b.Status != "queued" {
+		t.Fatalf("job b %+v", b)
+	}
+	if runs := runsWithStatus(t, e, "queued"); len(runs) != 1 || runs[0].GetID() != a.RunID {
+		t.Fatalf("queued runs %+v", runs)
+	}
+	jobs, _, err := e.client.Actions.ListWorkflowJobs(ctx(), "liquidmetal-dev", "muster", a.RunID, nil)
+	if err != nil || jobs.GetTotalCount() != 2 || len(jobs.Jobs) != 2 || jobs.Jobs[0].GetID() != a.ID || jobs.Jobs[1].GetID() != b.ID {
+		t.Fatalf("run jobs %+v err %v", jobs, err)
+	}
+
+	if err := e.fake.StartJob(a.ID); err != nil {
+		t.Fatalf("StartJob: %v", err)
+	}
+	if runs := runsWithStatus(t, e, "in_progress"); len(runs) != 1 || runs[0].GetID() != a.RunID {
+		t.Fatalf("in_progress runs %+v", runs)
+	}
+	if runs := runsWithStatus(t, e, "queued"); len(runs) != 0 {
+		t.Fatalf("queued runs after start %+v", runs)
+	}
+
+	c, err := e.fake.QueueJobInRun(a.RunID, []string{"z"})
+	if err != nil {
+		t.Fatalf("QueueJobInRun: %v", err)
+	}
+	if err := e.fake.CancelJob(c.ID); err != nil {
+		t.Fatalf("CancelJob(c): %v", err)
+	}
+	if err := e.fake.CancelJob(b.ID); err != nil {
+		t.Fatalf("CancelJob(b): %v", err)
+	}
+	if runs := runsWithStatus(t, e, "in_progress"); len(runs) != 1 {
+		t.Fatalf("in_progress runs after cancels %+v", runs)
+	}
+	if runs := runsWithStatus(t, e, "completed"); len(runs) != 0 {
+		t.Fatalf("completed runs %+v", runs)
+	}
+}
+
+func TestQueueJobInRunUnknownRun(t *testing.T) {
+	e := start(t)
+	seed(e)
+	if _, err := e.fake.QueueJobInRun(999999, []string{"x"}); err == nil {
+		t.Fatal("unknown run accepted")
+	}
+	if len(e.fake.Jobs()) != 0 || len(e.fake.Deliveries()) != 0 {
+		t.Fatal("state changed for an unknown run")
+	}
+}
+
+func TestQueueJobInRunEmptyLabels(t *testing.T) {
+	e := start(t)
+	seed(e)
+	a := queue(t, e, orgRepo, "x")
+	if _, err := e.fake.QueueJobInRun(a.RunID, nil); err == nil {
+		t.Fatal("empty labels accepted")
+	}
+}
+
+func TestStartJobRejectsNonQueued(t *testing.T) {
+	e := start(t)
+	seed(e)
+	a := queue(t, e, orgRepo, "x")
+	if err := e.fake.StartJob(a.ID); err != nil {
+		t.Fatalf("StartJob: %v", err)
+	}
+	if err := e.fake.StartJob(a.ID); err == nil {
+		t.Fatal("second StartJob accepted")
+	}
+	if err := e.fake.StartJob(999999); err == nil {
+		t.Fatal("StartJob of an unknown job accepted")
+	}
+}
+
+func TestCancelJobRejectsNonQueued(t *testing.T) {
+	e := start(t)
+	seed(e)
+	a := queue(t, e, orgRepo, "x")
+	if err := e.fake.StartJob(a.ID); err != nil {
+		t.Fatalf("StartJob: %v", err)
+	}
+	if err := e.fake.CancelJob(a.ID); err == nil {
+		t.Fatal("CancelJob of a started job accepted")
+	}
+}
+
+func TestCancelJobCompletesRun(t *testing.T) {
+	e := start(t)
+	seed(e)
+	a := queue(t, e, orgRepo, "x")
+	if err := e.fake.CancelJob(a.ID); err != nil {
+		t.Fatalf("CancelJob: %v", err)
+	}
+	runs := runsWithStatus(t, e, "completed")
+	if len(runs) != 1 || runs[0].GetConclusion() != "cancelled" {
+		t.Fatalf("completed runs %+v", runs)
+	}
+	if j := e.fake.Jobs()[0]; j.Status != "completed" || j.Conclusion != "cancelled" {
+		t.Fatalf("job %+v", j)
+	}
+}

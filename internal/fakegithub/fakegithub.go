@@ -20,7 +20,9 @@
 //
 // Tests seed the model with AddOrg, AddRepo and AddRunnerGroup; every org
 // gets a Default runner group with id 1. QueueJob stores a queued job as its
-// own run and POSTs a signed workflow_job.queued event to the webhook URL.
+// own run, QueueJobInRun adds one to an existing run, and both POST a signed
+// workflow_job.queued event to the webhook URL. A run's status follows its
+// jobs. StartJob and CancelJob move a queued job without a runner.
 // Deliveries are synchronous, never retried, and always recorded, so
 // Deliveries doubles as the event log; Redeliver repeats one.
 //
@@ -103,7 +105,7 @@ type Server struct {
 	repos         map[string]*repoState
 	runners       map[int64]*runnerState
 	jobs          map[int64]*jobState
-	runs          map[int64]int64 // run id -> job id
+	runs          map[int64][]int64 // run id -> job ids in queue order
 	deliveries    []Delivery
 	defaults      Behavior
 	nextBehaviors []Behavior
@@ -135,7 +137,7 @@ func New(cfg Config) *Server {
 		repos:     map[string]*repoState{},
 		runners:   map[int64]*runnerState{},
 		jobs:      map[int64]*jobState{},
-		runs:      map[int64]int64{},
+		runs:      map[int64][]int64{},
 		tokens:    map[string]time.Time{},
 		failNext:  map[string][]Fault{},
 		stallNext: map[string][]time.Duration{},
