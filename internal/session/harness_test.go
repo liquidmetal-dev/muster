@@ -7,7 +7,9 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -96,6 +98,7 @@ type env struct {
 	GitHub   *fakegithub.Server
 	Source   *battery.Source
 	Client   *github.Client
+	Rec      *recordingGitHub
 	Demand   *staticDemand
 	Logs     *syncBuffer
 	Registry *session.Registry
@@ -174,13 +177,14 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 		t.Fatalf("github.New: %v", err)
 	}
 
+	e.Rec = &recordingGitHub{Client: e.Client}
 	e.Config = session.Config{
 		Pools:        o.pools,
 		Namespace:    testNS,
 		Defaults:     defaults(),
 		PollInterval: pollPeriod,
 		Source:       e.Source,
-		GitHub:       e.Client,
+		GitHub:       e.Rec,
 		Demand:       e.Demand,
 		Clock:        e.Clock,
 		Logger:       slog.New(slog.NewJSONHandler(e.Logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
@@ -335,6 +339,13 @@ func (e *env) drive(step time.Duration, cond func() bool) {
 
 func (e *env) elapsed() time.Duration { return e.Clock.Now().Sub(startTime) }
 
+// setHandler replaces the exec handler for every VM.
+func (e *env) setHandler(h fakeexec.Handler) {
+	e.hmu.Lock()
+	defer e.hmu.Unlock()
+	e.handler = h
+}
+
 func (e *env) dispatch(ctx context.Context, start *mvmexecv1.ExecStart, stdin io.Reader, stdout, stderr io.Writer) fakeexec.Result {
 	e.hmu.Lock()
 	h := e.handler
@@ -357,5 +368,90 @@ func waitFor(t *testing.T, cond func() bool) {
 			t.Fatal("condition not met within 10s")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// recordingGitHub keeps every encoded JIT config it hands out so tests can
+// look for it in logs.
+type recordingGitHub struct {
+	*github.Client
+	mu      sync.Mutex
+	encoded []string
+}
+
+func (g *recordingGitHub) GenerateJITConfig(ctx context.Context, s github.Scope, r github.JITRequest) (github.JITConfig, error) {
+	c, err := g.Client.GenerateJITConfig(ctx, s, r)
+	if err == nil {
+		g.mu.Lock()
+		g.encoded = append(g.encoded, c.Encoded.Reveal())
+		g.mu.Unlock()
+	}
+	return c, err
+}
+
+func (g *recordingGitHub) issued() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return slices.Clone(g.encoded)
+}
+
+// capture is an exec handler that records the start frame and stdin, then
+// runs until the test calls exit or the stream ends.
+type capture struct {
+	mu        sync.Mutex
+	start     *mvmexecv1.ExecStart
+	stdin     []byte
+	stdinDone chan struct{}
+	exitCode  chan int32
+}
+
+func (e *env) capture() *capture {
+	c := &capture{stdinDone: make(chan struct{}), exitCode: make(chan int32, 1)}
+	e.setHandler(func(ctx context.Context, start *mvmexecv1.ExecStart, stdin io.Reader, _, _ io.Writer) fakeexec.Result {
+		b, _ := io.ReadAll(stdin)
+		c.mu.Lock()
+		c.start, c.stdin = start, b
+		c.mu.Unlock()
+		close(c.stdinDone)
+		select {
+		case code := <-c.exitCode:
+			return fakeexec.Result{ExitCode: code}
+		case <-ctx.Done():
+			return fakeexec.Result{}
+		}
+	})
+	return c
+}
+
+func (c *capture) waitStdin(t *testing.T) {
+	t.Helper()
+	select {
+	case <-c.stdinDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("exec handler did not read stdin to EOF")
+	}
+}
+
+func (c *capture) got() (*mvmexecv1.ExecStart, []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.start, c.stdin
+}
+
+// assertNoSecret fails when any 16-character piece of an issued JIT config
+// appears in the logs or in text.
+func (e *env) assertNoSecret(extra ...string) {
+	e.t.Helper()
+	issued := e.Rec.issued()
+	if len(issued) == 0 {
+		e.t.Fatal("no JIT config was issued")
+	}
+	hay := e.Logs.String() + strings.Join(extra, "\n")
+	for _, enc := range issued {
+		for i := 0; i+16 <= len(enc); i += 8 {
+			if strings.Contains(hay, enc[i:i+16]) {
+				e.t.Fatalf("JIT config piece %q found in logs or errors", enc[i:i+16])
+			}
+		}
 	}
 }

@@ -101,6 +101,7 @@ type Registry struct {
 
 	mu       sync.Mutex
 	sessions map[string]*session
+	groupIDs map[string]int64
 	runCtx   context.Context
 	stopped  bool
 	wg       sync.WaitGroup
@@ -132,6 +133,7 @@ func New(cfg Config) (*Registry, error) {
 		pools:    make(map[string]*pool, len(cfg.Pools)),
 		random:   rand.Reader,
 		sessions: map[string]*session{},
+		groupIDs: map[string]int64{},
 	}
 	for _, p := range cfg.Pools {
 		scope, err := github.ScopeFromConfig(p.Scope)

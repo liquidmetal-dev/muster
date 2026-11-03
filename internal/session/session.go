@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/liquidmetal-dev/muster/internal/vmsource"
@@ -23,7 +24,26 @@ type session struct {
 	vmID      string
 	claimedAt time.Time
 
-	vm vmsource.VM
+	vm       vmsource.VM
+	runnerID int64
+	// seen is set once GitHub has listed the runner.
+	seen bool
+
+	mbmu   sync.Mutex
+	mb     mailbox
+	notify chan struct{}
+}
+
+// mailbox carries what the registry observed for a session to its
+// goroutine. Every fact except absent is sticky until the session drains
+// it, so no observation is lost while the goroutine is busy.
+type mailbox struct {
+	listed    bool
+	online    bool
+	busy      bool
+	absent    bool
+	completed bool
+	lost      bool
 }
 
 func newSession(id string, p *pool, runner string) *session {
@@ -32,6 +52,7 @@ func newSession(id string, p *pool, runner string) *session {
 		pool:   p,
 		runner: runner,
 		state:  Pending,
+		notify: make(chan struct{}, 1),
 	}
 }
 
@@ -46,6 +67,39 @@ func (s *session) infoLocked() Info {
 		Busy:       s.busy,
 		ClaimedAt:  s.claimedAt,
 	}
+}
+
+// post merges m into the mailbox and wakes the session without blocking.
+func (s *session) post(m mailbox) {
+	s.mbmu.Lock()
+	s.mb.listed = s.mb.listed || m.listed
+	s.mb.online = s.mb.online || m.online
+	s.mb.busy = s.mb.busy || m.busy
+	s.mb.completed = s.mb.completed || m.completed
+	s.mb.lost = s.mb.lost || m.lost
+	s.mb.absent = m.absent
+	s.mbmu.Unlock()
+	select {
+	case s.notify <- struct{}{}:
+	default:
+	}
+}
+
+// repost puts back the facts that the next phase still needs.
+func (s *session) repost(m mailbox) {
+	m.online, m.listed = false, false
+	if m.busy || m.completed || m.absent {
+		s.post(m)
+	}
+}
+
+// drain returns the mailbox and empties it.
+func (s *session) drain() mailbox {
+	s.mbmu.Lock()
+	defer s.mbmu.Unlock()
+	m := s.mb
+	s.mb = mailbox{}
+	return m
 }
 
 func (r *Registry) runSession(ctx context.Context, s *session) {
@@ -64,7 +118,22 @@ func (r *Registry) drive(ctx context.Context, s *session) (State, Reason) {
 	if reason, ok := r.claim(ctx, s); !ok {
 		return Failed, reason
 	}
-	r.setState(s, Starting)
+	hbCtx, stopHeartbeat := context.WithCancel(ctx)
+	hbDone := make(chan struct{})
+	go func() {
+		defer close(hbDone)
+		r.heartbeat(hbCtx, s)
+	}()
+	defer func() {
+		stopHeartbeat()
+		<-hbDone
+	}()
+
+	run, reason, ok := r.start(ctx, s)
+	if !ok {
+		return Failed, reason
+	}
+	defer run.close()
 	<-ctx.Done()
 	return Failed, ""
 }
