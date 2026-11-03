@@ -431,7 +431,7 @@ func TestBodySizeLimit(t *testing.T) {
 func TestUnmatchedLabelsIgnored(t *testing.T) {
 	var buf bytes.Buffer
 	logger := debugLogger(&buf)
-	reg := demand.New(demand.Config{Pools: pools, Logger: logger})
+	reg := demand.New(demand.Config{Pools: pools, Clock: clock.NewManual(t0), Logger: logger})
 	m := &webhook.Counters{}
 	h := newHandler(t, webhook.Config{Demand: reg, Metrics: m, Logger: logger})
 	n := 0
@@ -490,7 +490,7 @@ func (b *blockingSessions) Create(context.Context, string) error {
 }
 
 func TestResponseNotBlockedByDispatch(t *testing.T) {
-	reg := demand.New(demand.Config{Pools: pools})
+	reg := demand.New(demand.Config{Pools: pools, Clock: clock.NewManual(t0)})
 	sessions := &blockingSessions{started: make(chan struct{}), release: make(chan struct{})}
 	d := dispatch.New(dispatch.Config{Pools: pools, Demand: reg, Sessions: sessions})
 	reg.SetOnChange(d.Wake)
