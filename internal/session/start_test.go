@@ -235,3 +235,40 @@ func TestRunnerOutputLogged(t *testing.T) {
 	e.Registry.JobStarted(info.RunnerName)
 	e.waitState(id, session.Running)
 }
+
+func TestCompletedWhileStarting(t *testing.T) {
+	e := newEnv(t)
+	c := e.capture()
+	release := e.Exec.HoldServerInfo()
+	e.start()
+	id := e.create(testPool)
+	waitFor(t, func() bool { return e.GitHub.RequestCount(fakegithub.PatternRepoJITConfig) == 1 })
+	info, _ := e.info(id)
+	e.Registry.JobCompleted(info.RunnerName)
+	release()
+	c.waitStdin(t)
+	waitFor(t, func() bool { i, _ := e.info(id); return i.State == session.Running && i.Busy })
+	e.waitLog(`"msg":"job completed"`)
+	e.Clock.Advance(30 * time.Second)
+	got := e.endedInfo()
+	if got.State != session.Ended || got.Reason != session.ReasonJobCompleted {
+		t.Fatalf("ended = %v %v, want ENDED job_completed", got.State, got.Reason)
+	}
+}
+
+func TestStartTimeoutBoundsLaunch(t *testing.T) {
+	e := newEnv(t)
+	release := e.Exec.HoldServerInfo()
+	defer release()
+	e.start()
+	id := e.create(testPool)
+	waitFor(t, func() bool { return e.GitHub.RequestCount(fakegithub.PatternRepoJITConfig) == 1 })
+	e.waitState(id, session.Starting)
+	got := e.driveEnd(10 * time.Second)
+	if got.State != session.Failed || got.Reason != session.ReasonStartTimeout {
+		t.Fatalf("ended = %v %v, want FAILED start_timeout", got.State, got.Reason)
+	}
+	if n := len(e.GitHub.Runners()); n != 0 {
+		t.Fatalf("runners after start timeout = %d, want 0", n)
+	}
+}

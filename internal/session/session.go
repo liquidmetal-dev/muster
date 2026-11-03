@@ -40,6 +40,7 @@ type session struct {
 // goroutine. Every fact except absent is sticky until the session drains
 // it, so no observation is lost while the goroutine is busy.
 type mailbox struct {
+	polled    bool
 	listed    bool
 	online    bool
 	busy      bool
@@ -79,19 +80,13 @@ func (s *session) post(m mailbox) {
 	s.mb.busy = s.mb.busy || m.busy
 	s.mb.completed = s.mb.completed || m.completed
 	s.mb.lost = s.mb.lost || m.lost
-	s.mb.absent = m.absent
+	if m.polled {
+		s.mb.absent = m.absent
+	}
 	s.mbmu.Unlock()
 	select {
 	case s.notify <- struct{}{}:
 	default:
-	}
-}
-
-// repost puts back the facts that the next phase still needs.
-func (s *session) repost(m mailbox) {
-	m.online, m.listed = false, false
-	if m.busy || m.completed || m.absent {
-		s.post(m)
 	}
 }
 
@@ -138,14 +133,14 @@ func (r *Registry) drive(ctx context.Context, s *session) (State, Reason) {
 
 	if s.adopted {
 		s.log.Info("adopted session")
-		return r.running(ctx, s, nil)
+		return r.running(ctx, s, nil, mailbox{})
 	}
-	run, reason, ok := r.start(ctx, s)
+	run, carry, reason, ok := r.start(ctx, s)
 	if !ok {
 		return Failed, reason
 	}
 	defer run.close()
-	return r.running(ctx, s, run)
+	return r.running(ctx, s, run, carry)
 }
 
 // finish cleans up after the session and removes it.

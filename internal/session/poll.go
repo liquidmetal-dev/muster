@@ -52,7 +52,7 @@ func (r *Registry) pollOnce(ctx context.Context) {
 		}
 		for _, s := range sessions {
 			rn, ok := byName[s.runner]
-			m := mailbox{listed: ok, online: ok && rn.Status == "online", busy: ok && rn.Busy, absent: !ok}
+			m := mailbox{polled: true, listed: ok, online: ok && rn.Status == "online", busy: ok && rn.Busy, absent: !ok}
 			if m.busy {
 				r.mu.Lock()
 				s.busy = true

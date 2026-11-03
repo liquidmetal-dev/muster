@@ -21,50 +21,90 @@ type execResult struct {
 
 // execRun is the runner process of a session that reached RUNNING.
 type execRun struct {
-	es   vmsource.ExecSession
-	done <-chan execResult
+	es     vmsource.ExecSession
+	done   <-chan execResult
+	cancel context.CancelFunc
 }
 
-func (e *execRun) close() { _ = e.es.Close() }
+func (e *execRun) close() {
+	_ = e.es.Close()
+	e.cancel()
+}
+
+type launched struct {
+	run    *execRun
+	reason Reason
+	ok     bool
+}
 
 // start requests the JIT configuration, starts the runner with it on
-// stdin, and waits for GitHub to report the runner online or busy.
-func (r *Registry) start(ctx context.Context, s *session) (*execRun, Reason, bool) {
+// stdin, and waits for GitHub to report the runner online or busy. The
+// start timeout covers all of it. It returns the observations that the
+// RUNNING phase still needs.
+func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Reason, bool) {
 	r.setState(s, Starting)
 	timeout := r.clock.NewTimer(r.cfg.Defaults.StartTimeout.Duration())
 	defer timeout.Stop()
 
-	run, reason, ok := r.launch(ctx, s)
-	if !ok {
-		return nil, reason, false
+	launchCtx, cancelLaunch := context.WithCancel(ctx)
+	result := make(chan launched, 1)
+	go func() {
+		run, reason, ok := r.launch(launchCtx, s)
+		result <- launched{run: run, reason: reason, ok: ok}
+	}()
+	abandon := func() {
+		cancelLaunch()
+		if l := <-result; l.run != nil {
+			l.run.close()
+		}
 	}
+	var run *execRun
+	select {
+	case <-ctx.Done():
+		abandon()
+		return nil, mailbox{}, "", false
+	case <-timeout.C():
+		abandon()
+		return nil, mailbox{}, ReasonStartTimeout, false
+	case l := <-result:
+		if !l.ok {
+			cancelLaunch()
+			return nil, mailbox{}, l.reason, false
+		}
+		run = l.run
+		run.cancel = cancelLaunch
+	}
+
+	var carry mailbox
 	for {
 		select {
 		case <-ctx.Done():
 			run.close()
-			return nil, "", false
+			return nil, mailbox{}, "", false
 		case <-timeout.C():
 			run.close()
-			return nil, ReasonStartTimeout, false
+			return nil, mailbox{}, ReasonStartTimeout, false
 		case res := <-run.done:
 			s.log.Warn("runner exited before it came online", "exit_code", res.code, "err", res.err)
 			run.close()
-			return nil, ReasonExecError, false
+			return nil, mailbox{}, ReasonExecError, false
 		case <-s.notify:
 			m := s.drain()
 			s.seen = s.seen || m.listed || m.online
 			if m.lost {
 				run.close()
-				return nil, ReasonVMLost, false
+				return nil, mailbox{}, ReasonVMLost, false
 			}
-			if m.online || m.busy {
+			carry.completed = carry.completed || m.completed
+			carry.busy = carry.busy || m.busy || m.completed
+			if m.online || carry.busy {
 				r.mu.Lock()
 				s.state = Running
-				s.busy = s.busy || m.busy
+				s.busy = s.busy || carry.busy
 				r.mu.Unlock()
-				s.log.Info("runner online", "busy", m.busy)
-				s.repost(m)
-				return run, "", true
+				s.log.Info("runner online", "busy", carry.busy)
+				carry.absent = m.absent
+				return run, carry, "", true
 			}
 		}
 	}
@@ -111,7 +151,7 @@ func (r *Registry) launch(ctx context.Context, s *session) (*execRun, Reason, bo
 		code, err := es.Wait(ctx)
 		done <- execResult{code: code, err: err}
 	}()
-	return &execRun{es: es, done: done}, "", true
+	return &execRun{es: es, done: done, cancel: func() {}}, "", true
 }
 
 // runnerGroupID resolves the pool's runner group once and caches it.

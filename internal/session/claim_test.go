@@ -118,3 +118,19 @@ func TestClaimFatalErrorFails(t *testing.T) {
 		t.Fatalf("ended = %v %v, want FAILED claim_error", got.State, got.Reason)
 	}
 }
+
+func TestClaimSucceedsAfterDeadline(t *testing.T) {
+	e := newEnv(t)
+	e.Pool.Stall("ClaimVM", 500*time.Millisecond)
+	e.start()
+	id := e.create(testPool)
+	e.waitState(id, session.Claiming)
+	e.Clock.Advance(11 * time.Minute)
+	got := e.endedInfo()
+	if got.State != session.Failed || got.Reason != session.ReasonClaimDeadline {
+		t.Fatalf("ended = %v %v, want FAILED claim_deadline", got.State, got.Reason)
+	}
+	if n := e.Pool.CallCount("ReleaseVM"); n != 1 {
+		t.Fatalf("ReleaseVM calls = %d, want 1 for the late VM", n)
+	}
+}

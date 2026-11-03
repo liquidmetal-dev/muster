@@ -7,7 +7,7 @@ import (
 
 // running watches a RUNNING session until the first end signal. run is
 // nil for a session without an exec stream.
-func (r *Registry) running(ctx context.Context, s *session, run *execRun) (State, Reason) {
+func (r *Registry) running(ctx context.Context, s *session, run *execRun, carry mailbox) (State, Reason) {
 	var execDone <-chan execResult
 	if run != nil {
 		execDone = run.done
@@ -22,6 +22,29 @@ func (r *Registry) running(ctx context.Context, s *session, run *execRun) (State
 	maxD := r.clock.NewTimer(max(s.claimedAt.Add(s.pool.cfg.MaxSessionDuration.Duration()).Sub(r.clock.Now()), 0))
 	defer maxD.Stop()
 	var graceC <-chan time.Time
+
+	apply := func(m mailbox) (State, Reason, bool) {
+		s.seen = s.seen || m.listed || m.online
+		if m.lost {
+			return Failed, ReasonVMLost, true
+		}
+		if m.busy && idleC != nil {
+			idle.Stop()
+			idleC = nil
+			s.log.Info("runner busy")
+		}
+		if m.completed && graceC == nil {
+			s.log.Info("job completed", "grace", r.cfg.Grace)
+			graceC = r.clock.After(r.cfg.Grace)
+		}
+		if m.absent && s.seen {
+			return Ended, ReasonRunnerAbsent, true
+		}
+		return 0, "", false
+	}
+	if st, reason, done := apply(carry); done {
+		return st, reason
+	}
 
 	for {
 		select {
@@ -42,22 +65,8 @@ func (r *Registry) running(ctx context.Context, s *session, run *execRun) (State
 		case <-graceC:
 			return Ended, ReasonJobCompleted
 		case <-s.notify:
-			m := s.drain()
-			s.seen = s.seen || m.listed || m.online
-			if m.lost {
-				return Failed, ReasonVMLost
-			}
-			if m.busy && idleC != nil {
-				idle.Stop()
-				idleC = nil
-				s.log.Info("runner busy")
-			}
-			if m.completed && graceC == nil {
-				s.log.Info("job completed", "grace", r.cfg.Grace)
-				graceC = r.clock.After(r.cfg.Grace)
-			}
-			if m.absent && s.seen {
-				return Ended, ReasonRunnerAbsent
+			if st, reason, done := apply(s.drain()); done {
+				return st, reason
 			}
 		}
 	}

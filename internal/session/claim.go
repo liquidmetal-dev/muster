@@ -30,6 +30,11 @@ func (r *Registry) claim(ctx context.Context, s *session) (Reason, bool) {
 			s.claimedAt = r.clock.Now()
 			r.mu.Unlock()
 			s.log = s.log.With("vm", vm.ID())
+			select {
+			case <-deadline.C():
+				return ReasonClaimDeadline, false
+			default:
+			}
 			return "", true
 		}
 		if ctx.Err() != nil {
