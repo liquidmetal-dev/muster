@@ -15,6 +15,8 @@ import (
 	"github.com/liquidmetal-dev/muster/internal/vmsource"
 )
 
+var errExecerClosed = errors.New("flintlock: execer is closed")
+
 // Execer runs commands on flintlock hosts. Each host gets one connection,
 // dialled on first use with the TLS settings of its battery host name and
 // kept until Close. A host is checked with ServerInfo before its first
@@ -24,6 +26,7 @@ type Execer struct {
 	logger *slog.Logger
 
 	mu       sync.Mutex
+	closed   bool
 	conns    map[hostKey]*grpc.ClientConn
 	checked  map[hostKey]bool
 	inflight map[hostKey]*checkCall
@@ -75,6 +78,9 @@ func NewExecer(cfg config.Flintlock, opts ...Option) (*Execer, error) {
 func (e *Execer) conn(host vmsource.HostInfo) (*grpc.ClientConn, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.closed {
+		return nil, errExecerClosed
+	}
 	k := keyOf(host)
 	if c, ok := e.conns[k]; ok {
 		return c, nil
@@ -92,10 +98,12 @@ func (e *Execer) conn(host vmsource.HostInfo) (*grpc.ClientConn, error) {
 	return c, nil
 }
 
-// Close closes every connection.
+// Close closes every connection. A check that is still running cannot
+// dial a new one after Close.
 func (e *Execer) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.closed = true
 	var errs []error
 	for k, c := range e.conns {
 		if err := c.Close(); err != nil {

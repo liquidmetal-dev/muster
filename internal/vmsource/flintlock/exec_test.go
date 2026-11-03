@@ -197,6 +197,24 @@ func TestExecAbortWithoutExitCode(t *testing.T) {
 	}
 }
 
+func TestExecAfterCloseDoesNotDial(t *testing.T) {
+	fake := fakeexec.New()
+	fake.AddVM("vm-1", exitWith(0))
+	e := newTestExecer(t, fake)
+	if err := e.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := e.Exec(t.Context(), hostA, "vm-1", vmsource.ExecSpec{Cmd: "x"}); err == nil {
+		t.Fatalf("Exec after Close succeeded, want an error")
+	}
+	e.mu.Lock()
+	n := len(e.conns)
+	e.mu.Unlock()
+	if n != 0 || fake.ServerInfoCount() != 0 {
+		t.Fatalf("after Close: %d connections, %d ServerInfo calls; want 0 and 0", n, fake.ServerInfoCount())
+	}
+}
+
 func TestExecUnavailableCodes(t *testing.T) {
 	tests := []struct {
 		name  string
