@@ -136,3 +136,25 @@ func TestAdoptBeforeRunFails(t *testing.T) {
 		t.Fatalf("Adopt before Run = %v, want ErrNotRunning", err)
 	}
 }
+
+func TestAdoptLeaseGoneBeforeAcquire(t *testing.T) {
+	e := newEnv(t)
+	e.start()
+	a := e.inFlight("muster-muster-linux-" + adoptID)
+	vm, err := e.Source.Acquire(context.Background(), testPool, adoptID)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := e.Source.Release(context.Background(), vm); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	if err := e.Registry.Adopt(context.Background(), a); !errors.Is(err, session.ErrAdoptMismatch) {
+		t.Fatalf("Adopt = %v, want ErrAdoptMismatch", err)
+	}
+	if n := len(e.Registry.Sessions()); n != 0 {
+		t.Fatalf("sessions = %d, want 0", n)
+	}
+	if n := len(e.Pool.Leases()); n != 0 {
+		t.Fatalf("leases = %d, want 0: the replacement VM must be released", n)
+	}
+}

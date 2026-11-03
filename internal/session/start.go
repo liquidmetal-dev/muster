@@ -24,6 +24,8 @@ type execRun struct {
 	es     vmsource.ExecSession
 	done   <-chan execResult
 	cancel context.CancelFunc
+	// broken is set when the stream ended without an exit code.
+	broken bool
 }
 
 func (e *execRun) close() {
@@ -85,6 +87,9 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 	case l := <-result:
 		if !l.ok {
 			cancelLaunch()
+			if reason, ok := expired(); ok {
+				return nil, mailbox{}, reason, false
+			}
 			return nil, mailbox{}, l.reason, false
 		}
 		run = l.run
@@ -96,6 +101,7 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 	}
 
 	var carry mailbox
+	execDone := run.done
 	for {
 		select {
 		case <-ctx.Done():
@@ -107,8 +113,14 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 		case <-maxD.C():
 			run.close()
 			return nil, mailbox{}, ReasonMaxDuration, false
-		case res := <-run.done:
-			s.log.Warn("runner exited before it came online", "exit_code", res.code, "err", res.err)
+		case res := <-execDone:
+			if res.err != nil {
+				s.log.Warn("exec stream broke; watching the runner through GitHub", "err", res.err)
+				execDone = nil
+				run.broken = true
+				continue
+			}
+			s.log.Warn("runner exited before it came online", "exit_code", res.code)
 			run.close()
 			return nil, mailbox{}, ReasonExecError, false
 		case <-s.notify:

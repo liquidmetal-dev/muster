@@ -9,7 +9,7 @@ import (
 // nil for a session without an exec stream.
 func (r *Registry) running(ctx context.Context, s *session, run *execRun, carry mailbox) (State, Reason) {
 	var execDone <-chan execResult
-	if run != nil {
+	if run != nil && !run.broken {
 		execDone = run.done
 	}
 	idle := r.clock.NewTimer(r.cfg.Defaults.IdleTimeout.Duration())

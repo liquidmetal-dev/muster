@@ -190,23 +190,61 @@ func TestJITConfigNeverLogged(t *testing.T) {
 		_, _ = stdin.Read(make([]byte, 1))
 		return fakeexec.Result{Abort: errors.New("boom")}
 	})
+	e.GitHub.NextRunner(fakegithub.Behavior{NeverRegister: true})
 	e.start()
 	e.create(testPool)
-	got := e.endedInfo()
-	if got.State != session.Failed || got.Reason != session.ReasonExecError {
-		t.Fatalf("ended = %v %v, want FAILED exec_error", got.State, got.Reason)
+	got := e.driveEnd(10 * time.Second)
+	if got.State != session.Failed {
+		t.Fatalf("ended = %v %v, want FAILED", got.State, got.Reason)
 	}
 	e.assertNoSecret(string(got.Reason))
+}
+
+func TestExecBrokenWhileStartingIsNotEnd(t *testing.T) {
+	e := newEnv(t)
+	broke := make(chan struct{})
+	e.setHandler(func(_ context.Context, _ *mvmexecv1.ExecStart, stdin io.Reader, _, _ io.Writer) fakeexec.Result {
+		_, _ = io.Copy(io.Discard, stdin)
+		close(broke)
+		return fakeexec.Result{Abort: errors.New("host lost")}
+	})
+	e.start()
+	id := e.create(testPool)
+	<-broke
+	e.waitLog(`"msg":"exec stream broke; watching the runner through GitHub"`)
+	if st := e.state(id); st != session.Starting {
+		t.Fatalf("state after the exec stream broke = %v, want STARTING", st)
+	}
+	info, _ := e.info(id)
+	e.Registry.JobStarted(info.RunnerName)
+	e.waitState(id, session.Running)
+}
+
+func TestLaunchErrorAfterDeadline(t *testing.T) {
+	e := newEnv(t)
+	e.Exec.FailNext("ExecCommand", codes.Internal)
+	release := e.Exec.HoldServerInfo()
+	e.start()
+	id := e.create(testPool)
+	waitFor(t, func() bool { return e.GitHub.RequestCount(fakegithub.PatternRepoJITConfig) == 1 })
+	e.waitState(id, session.Starting)
+	e.Clock.Advance(3 * time.Minute)
+	release()
+	got := e.endedInfo()
+	if got.State != session.Failed || got.Reason != session.ReasonStartTimeout {
+		t.Fatalf("ended = %v %v, want FAILED start_timeout", got.State, got.Reason)
+	}
 }
 
 func TestJITConfigNotLoggedWhenExecOpenFails(t *testing.T) {
 	e := newEnv(t)
 	e.Exec.FailNext("ExecCommand", codes.Internal)
+	e.GitHub.NextRunner(fakegithub.Behavior{NeverRegister: true})
 	e.start()
 	e.create(testPool)
-	got := e.endedInfo()
-	if got.State != session.Failed || got.Reason != session.ReasonExecError {
-		t.Fatalf("ended = %v %v, want FAILED exec_error", got.State, got.Reason)
+	got := e.driveEnd(10 * time.Second)
+	if got.State != session.Failed {
+		t.Fatalf("ended = %v %v, want FAILED", got.State, got.Reason)
 	}
 	e.assertNoSecret(string(got.Reason))
 }
