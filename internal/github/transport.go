@@ -229,7 +229,8 @@ func rateLimited(resp *http.Response) bool {
 }
 
 // rateLimitWait reads the wait GitHub asked for: Retry-After in seconds or
-// as an HTTP date, else the primary limit's X-RateLimit-Reset.
+// as an HTTP date, else the primary limit's X-RateLimit-Reset. An
+// unparseable Retry-After falls back to backoff, not to the reset header.
 func (t *retryTransport) rateLimitWait(resp *http.Response) (time.Duration, bool) {
 	now := t.cfg.Clock.Now()
 	if v := resp.Header.Get("Retry-After"); v != "" {
@@ -239,6 +240,7 @@ func (t *retryTransport) rateLimitWait(resp *http.Response) (time.Duration, bool
 		if when, err := http.ParseTime(v); err == nil {
 			return max(when.Sub(now), 0), true
 		}
+		return 0, false
 	}
 	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
 		if unix, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {

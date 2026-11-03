@@ -73,6 +73,20 @@ func TestRetryAfterHTTPDate(t *testing.T) {
 	}
 }
 
+func TestRetryAfterUnparseableUsesBackoff(t *testing.T) {
+	e := newEnv(t)
+	var rec sleepRecorder
+	c := e.AppClient(t, rec.install)
+	reset := strconv.FormatInt(e.Clock.Now().Add(30*time.Second).Unix(), 10)
+	e.Fake.FailNext(fakegithub.PatternInstallation, fakegithub.Fault{Status: 429, Header: header("Retry-After", "soon", "X-RateLimit-Remaining", "0", "X-RateLimit-Reset", reset), Message: "slow down"})
+	if err := c.Ping(context.Background()); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+	if got := rec.got(); len(got) != 1 || got[0] > time.Second {
+		t.Fatalf("sleeps = %v, want one backoff of at most 1s", got)
+	}
+}
+
 func TestRetry403SecondaryLimit(t *testing.T) {
 	e := newEnv(t)
 	var rec sleepRecorder
