@@ -58,23 +58,36 @@ _Avoid_: Snapshot, poll result
 
 ## Startup and shutdown
 
-**Reconciliation**:
+**Pool reconciliation**:
+The startup pass that makes the pools in muster's namespace equal the configured pools, before
+session reconciliation runs.
+_Avoid_: Pool sync, apply
+
+**Orphan pool**:
+A pool in muster's namespace that the configuration does not name.
+Pool reconciliation logs it, and prunes it only when the operator asks.
+
+**Prune**:
+To delete an orphan pool. A prune never forces: a pool with leased VMs stays until a later start.
+_Avoid_: Clean up, garbage-collect
+
+**Session reconciliation**:
 The startup pass that pairs each of muster's leases with the runner named for the lease's
 pool and session id, before any demand is taken: pairs become adopted sessions, and orphans
 are removed.
-_Avoid_: Sync, recovery
+_Avoid_: Reconciliation (unqualified), sync, recovery
 
 **Orphan lease**:
 A lease in muster's namespace with no listed runner named for its pool and session id, or a
 lease muster cannot track (its pool is no longer configured, or its request id is not a
 session id).
-Reconciliation releases it.
+Session reconciliation releases it.
 
 **Orphan runner**:
 A runner named for muster's namespace, one of its pools and a session id, that is not the
 runner named for any lease's pool and session id. A pool is muster's when it is configured or
 when one of muster's leases names it.
-Reconciliation deletes it.
+Session reconciliation deletes it.
 
 **Shutdown grace**:
 How long muster waits after SIGTERM for busy sessions to finish before it exits. Sessions
