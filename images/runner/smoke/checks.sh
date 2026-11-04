@@ -16,8 +16,10 @@ result() {
   fi
 }
 
-state=""
-for _ in $(seq 180); do
+# In vm mode smoke.service is itself part of boot, so the system cannot reach "running" before
+# it ends; the unit's ordering does the waiting instead.
+state=running
+[ "${SMOKE_MODE:-container}" = vm ] || for _ in $(seq 180); do
   state="$(systemctl is-system-running 2>/dev/null)"
   [ "$state" = running ] || [ "$state" = degraded ] && break
   sleep 1
@@ -43,8 +45,11 @@ out="$(/usr/local/bin/muster-runner --check 2>&1)"
 result muster_runner_check $? "$(echo "$out" | grep ^fail | tr '\n' ' ')"
 
 if [ "${SMOKE_NETWORK:-0}" = 1 ]; then
-  addrs="$(networkctl status 2>&1)"
-  if [[ "$addrs" == *"(DHCPv4"* ]]; then result dhcp 0; else result dhcp 1 "no DHCPv4 address in networkctl status"; fi
+  if ip -4 -o addr show scope global dynamic | grep -q inet; then
+    result dhcp 0
+  else
+    result dhcp 1 "no dynamic IPv4 address: $(ip -4 -o addr show scope global | tr '\n' ' ')"
+  fi
 
   if [ -s /etc/machine-id ]; then result machine_id 0; else result machine_id 1 "/etc/machine-id is empty"; fi
 

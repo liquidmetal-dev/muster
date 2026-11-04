@@ -1,0 +1,17 @@
+[Unit]
+Description=muster runner image smoke checks
+After=docker.service guest-agent.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=SMOKE_MODE=vm SMOKE_NETWORK=1
+ExecStart=/usr/local/lib/muster-smoke/checks.sh
+# poweroff only halts a Firecracker guest; with reboot=k a reboot makes Firecracker exit.
+ExecStopPost=/usr/bin/systemctl --no-block reboot
+StandardOutput=journal+console
+StandardError=journal+console
+TTYPath=/dev/ttyS0
+
+[Install]
+WantedBy=multi-user.target
