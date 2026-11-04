@@ -23,11 +23,12 @@ firecracker_version=v1.17.0
 kernel_image=ghcr.io/liquidmetal-dev/firecracker-kernel:6.1-20260929-1349
 tap=mstap0
 host_ip=172.16.0.1
+guest_agent_port=1024
 
 smoke_vm() {
   local missing=()
   [ -r /dev/kvm ] && [ -w /dev/kvm ] || missing+=(/dev/kvm)
-  for tool in sudo docker mkfs.ext4 iptables ip sysctl curl jq sha256sum; do
+  for tool in sudo docker mkfs.ext4 iptables ip sysctl curl jq sha256sum python3; do
     command -v "$tool" >/dev/null || missing+=("$tool")
   done
   if [ "${#missing[@]}" -gt 0 ]; then
@@ -120,8 +121,18 @@ smoke_vm() {
 }
 JSON
 
-  local fc_status=0
-  timeout 900 "$fc" --no-api --config-file "$work/vm.json" >"$work/console.log" 2>&1 || fc_status=$?
+  local fc_status=0 fc_pid vsock=fail
+  timeout 900 "$fc" --no-api --config-file "$work/vm.json" >"$work/console.log" 2>&1 &
+  fc_pid=$!
+  # The guest reboots once its checks end, so probe guest-agent while the VM runs.
+  while kill -0 "$fc_pid" 2>/dev/null; do
+    if python3 -I "$here/smoke/vsock-probe.py" "$work/vsock.sock" "$guest_agent_port"; then
+      vsock=pass
+      break
+    fi
+    sleep 0.5
+  done
+  wait "$fc_pid" || fc_status=$?
   if [ "$fc_status" != 0 ]; then
     tail -50 "$work/console.log"
     echo "smoke.sh vm: firecracker exited with status $fc_status (124 is the 900 s timeout)" >&2
@@ -129,6 +140,12 @@ JSON
   fi
   # The console prefixes each line with the kernel time and the unit's process name.
   grep -ao 'SMOKE: .*' "$work/console.log" || { tail -50 "$work/console.log"; exit 1; }
+  if [ "$vsock" = pass ]; then
+    echo "SMOKE: PASS guest_agent_vsock"
+  else
+    echo "SMOKE: FAIL guest_agent_vsock: no answer on vsock port $guest_agent_port"
+    exit 1
+  fi
   grep -aEq 'SMOKE: DONE pass=[0-9]+ fail=0' "$work/console.log"
 }
 

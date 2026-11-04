@@ -27,7 +27,7 @@ Each script uses the image in `IMAGE` (default `...:minimal-latest`).
 | `bash images/runner/smoke/image-test.sh` | the image contents: one layer, the user, the units, the packages | docker, jq |
 | `bash images/runner/smoke/entrypoint-test.sh` | `muster-runner` with a stub `run.sh` | docker |
 | `bash images/runner/smoke.sh container` | a boot under systemd in a privileged container: guest-agent, dockerd, containerd and `muster-runner --check` | docker |
-| `bash images/runner/smoke.sh vm` | a boot in Firecracker with the reference kernel: the container checks, plus DHCP, machine-id, DNS and HTTPS to GitHub | `/dev/kvm`, sudo, docker, `mkfs.ext4`, iptables, `ip`, jq |
+| `bash images/runner/smoke.sh vm` | a boot in Firecracker with the reference kernel: the container checks, plus DHCP, machine-id, DNS, HTTPS to GitHub, and a vsock connection from the host to guest-agent | `/dev/kvm`, sudo, docker, `mkfs.ext4`, iptables, `ip`, jq, python3 |
 
 The Images workflow runs the first three on each change under `images/`. The vm mode runs
 on a developer's host only. It downloads Firecracker v1.17.0 to
