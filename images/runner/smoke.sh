@@ -38,7 +38,14 @@ smoke_vm() {
   work="$(mktemp -d)"
   dnsmasq_ctr=""
   forward_before=""
+  tap_created=""
+  added_rules=()
   trap cleanup_vm EXIT
+
+  if ip link show "$tap" >/dev/null 2>&1; then
+    echo "smoke.sh vm: $tap already exists; remove it or wait for the other run to end" >&2
+    exit 2
+  fi
 
   local cache="${XDG_CACHE_HOME:-$HOME/.cache}/muster-smoke"
   local fc_tgz="firecracker-$firecracker_version-x86_64.tgz"
@@ -80,6 +87,7 @@ smoke_vm() {
   sudo rm -rf "$work/rootfs"
 
   sudo ip tuntap add "$tap" mode tap user "$(id -un)"
+  tap_created=1
   sudo ip addr add "$host_ip/24" dev "$tap"
   sudo ip link set "$tap" up
   forward_before="$(sysctl -n net.ipv4.ip_forward)"
@@ -87,6 +95,7 @@ smoke_vm() {
   for rule in "${vm_rules[@]}"; do
     # shellcheck disable=SC2086 # each rule is a list of iptables arguments
     sudo iptables -I $rule
+    added_rules+=("$rule")
   done
 
   docker build -q -t muster-smoke-dnsmasq -f "$here/smoke/dnsmasq.Dockerfile" "$here/smoke" >/dev/null
@@ -111,7 +120,13 @@ smoke_vm() {
 }
 JSON
 
-  timeout 900 "$fc" --no-api --config-file "$work/vm.json" >"$work/console.log" 2>&1 || true
+  local fc_status=0
+  timeout 900 "$fc" --no-api --config-file "$work/vm.json" >"$work/console.log" 2>&1 || fc_status=$?
+  if [ "$fc_status" != 0 ]; then
+    tail -50 "$work/console.log"
+    echo "smoke.sh vm: firecracker exited with status $fc_status (124 is the 900 s timeout)" >&2
+    exit 1
+  fi
   # The console prefixes each line with the kernel time and the unit's process name.
   grep -ao 'SMOKE: .*' "$work/console.log" || { tail -50 "$work/console.log"; exit 1; }
   grep -aEq 'SMOKE: DONE pass=[0-9]+ fail=0' "$work/console.log"
@@ -127,12 +142,12 @@ vm_rules=(
 cleanup_vm() {
   set +e
   [ -n "$dnsmasq_ctr" ] && docker rm -f "$dnsmasq_ctr" >/dev/null
-  for rule in "${vm_rules[@]}"; do
+  for rule in "${added_rules[@]}"; do
     # shellcheck disable=SC2086 # each rule is a list of iptables arguments
-    sudo iptables -D $rule 2>/dev/null
+    sudo iptables -D $rule
   done
   [ -n "$forward_before" ] && sudo sysctl -q -w "net.ipv4.ip_forward=$forward_before"
-  sudo ip link del "$tap" 2>/dev/null
+  [ -n "$tap_created" ] && sudo ip link del "$tap"
   sudo rm -rf "$work"
 }
 
