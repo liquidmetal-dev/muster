@@ -114,6 +114,7 @@ func TestValidateSections(t *testing.T) {
 		{"start_timeout negative", func(m map[string]any) { set(m, "defaults.start_timeout", "-1s") }, "defaults.start_timeout: must be positive"},
 		{"idle_timeout negative", func(m map[string]any) { set(m, "defaults.idle_timeout", "-1s") }, "defaults.idle_timeout: must be positive"},
 		{"max_session_duration negative", func(m map[string]any) { set(m, "defaults.max_session_duration", "-1h") }, "defaults.max_session_duration: must be positive"},
+		{"shutdown_grace negative", func(m map[string]any) { m["shutdown_grace"] = "-1s" }, "shutdown_grace: must be positive"},
 	})
 }
 

@@ -25,6 +25,7 @@ const (
 	DefaultIdleTimeout        = 5 * time.Minute
 	DefaultMaxSessionDuration = 6 * time.Hour
 	DefaultWorkFolder         = "_work"
+	DefaultShutdownGrace      = 30 * time.Second
 )
 
 // Parse decodes a configuration, applies defaults and runs every static
@@ -111,6 +112,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Battery.Namespace == "" {
 		cfg.Battery.Namespace = DefaultNamespace
 	}
+	defaultDuration(&cfg.ShutdownGrace, DefaultShutdownGrace)
 	defaultDuration(&cfg.Defaults.ClaimDeadline, DefaultClaimDeadline)
 	defaultDuration(&cfg.Defaults.StartTimeout, DefaultStartTimeout)
 	defaultDuration(&cfg.Defaults.IdleTimeout, DefaultIdleTimeout)

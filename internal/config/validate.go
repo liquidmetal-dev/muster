@@ -158,6 +158,7 @@ func validateDefaults(cfg *Config, errs *errorList) {
 		path string
 		v    Duration
 	}{
+		{"shutdown_grace", cfg.ShutdownGrace},
 		{"defaults.claim_deadline", cfg.Defaults.ClaimDeadline},
 		{"defaults.start_timeout", cfg.Defaults.StartTimeout},
 		{"defaults.idle_timeout", cfg.Defaults.IdleTimeout},

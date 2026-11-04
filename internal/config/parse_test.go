@@ -89,6 +89,7 @@ func TestParseSyntaxError(t *testing.T) {
 func TestParseDefaults(t *testing.T) {
 	cfg, err := parseMutated(t, func(m map[string]any) {
 		del(m, "metrics_addr")
+		del(m, "shutdown_grace")
 		del(m, "listen.addr")
 		del(m, "api.addr")
 		del(m, "github.api_base_url")
@@ -106,6 +107,7 @@ func TestParseDefaults(t *testing.T) {
 		want any
 	}{
 		{"metrics_addr", cfg.MetricsAddr, ":9090"},
+		{"shutdown_grace", cfg.ShutdownGrace.Duration(), 30 * time.Second},
 		{"listen.addr", cfg.Listen.Addr, ":8443"},
 		{"api.addr", cfg.API.Addr, ":9443"},
 		{"api_base_url", cfg.GitHub.APIBaseURL, "https://api.github.com"},

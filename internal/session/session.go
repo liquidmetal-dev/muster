@@ -175,6 +175,7 @@ func (r *Registry) finish(ctx context.Context, s *session, outcome State, reason
 	info := s.infoLocked()
 	s.state = Released
 	delete(r.sessions, s.id)
+	r.signalLocked()
 	r.mu.Unlock()
 	if outcome == Failed {
 		s.log.Warn("session failed", "reason", reason)
