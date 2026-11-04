@@ -129,7 +129,12 @@ type Pool struct {
 	Labels []string `json:"labels"`
 	Size   int      `json:"size"`
 	// MaxConcurrent defaults to twice Size (POOL-6).
-	MaxConcurrent  int      `json:"max_concurrent,omitempty"`
+	MaxConcurrent int `json:"max_concurrent,omitempty"`
+	// MaxSessionDuration defaults to defaults.max_session_duration.
+	MaxSessionDuration Duration `json:"max_session_duration,omitempty"`
+	// WorkFolder is the runner work folder, relative to the runner
+	// directory. Defaults to DefaultWorkFolder.
+	WorkFolder     string   `json:"work_folder,omitempty"`
 	FlintlockHosts []string `json:"flintlock_hosts"`
 	CreateCommands []string `json:"create_commands,omitempty"`
 	// MicroVMTemplate is a flintlock MicroVMSpec in protojson.

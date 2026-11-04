@@ -116,6 +116,8 @@ func TestParseDefaults(t *testing.T) {
 		{"idle_timeout", cfg.Defaults.IdleTimeout.Duration(), 5 * time.Minute},
 		{"max_session_duration", cfg.Defaults.MaxSessionDuration.Duration(), 6 * time.Hour},
 		{"max_concurrent", cfg.Pools[0].MaxConcurrent, 6},
+		{"pool max_session_duration", cfg.Pools[0].MaxSessionDuration.Duration(), 6 * time.Hour},
+		{"pool work_folder", cfg.Pools[0].WorkFolder, "_work"},
 	}
 	for _, c := range checks {
 		if c.got != c.want {
@@ -196,5 +198,29 @@ func TestFieldErrorUnwrap(t *testing.T) {
 	err := errors.Join(&config.FieldError{Path: "a", Err: fmt.Errorf("read: %w", fs.ErrNotExist)})
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("errors.Is(fs.ErrNotExist) = false")
+	}
+}
+
+func TestParsePoolDefaults(t *testing.T) {
+	cfg, err := parseMutated(t, func(m map[string]any) {
+		set(m, "defaults.max_session_duration", "2h")
+		p := secondPool(m, "explicit")
+		p["max_session_duration"] = "1h"
+		p["work_folder"] = "w"
+	})
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if got := cfg.Pools[0].MaxSessionDuration.Duration(); got != 2*time.Hour {
+		t.Errorf("pools[0].max_session_duration = %v, want 2h from defaults", got)
+	}
+	if got := cfg.Pools[0].WorkFolder; got != config.DefaultWorkFolder {
+		t.Errorf("pools[0].work_folder = %q, want %q", got, config.DefaultWorkFolder)
+	}
+	if got := cfg.Pools[1].MaxSessionDuration.Duration(); got != time.Hour {
+		t.Errorf("pools[1].max_session_duration = %v, want 1h", got)
+	}
+	if got := cfg.Pools[1].WorkFolder; got != "w" {
+		t.Errorf("pools[1].work_folder = %q, want w", got)
 	}
 }

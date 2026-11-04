@@ -225,6 +225,18 @@ func TestValidatePools(t *testing.T) {
 		{"two hosts ok", func(m map[string]any) { pool(m, 0)["flintlock_hosts"] = []any{"host-a", "host-b"} }, ""},
 		{"host not in overrides ok", func(m map[string]any) { pool(m, 0)["flintlock_hosts"] = []any{"host-z"} }, ""},
 		{"create_commands absent ok", func(m map[string]any) { delete(pool(m, 0), "create_commands") }, ""},
+		{"max_session_duration negative", func(m map[string]any) { pool(m, 0)["max_session_duration"] = "-1s" }, pp + ".max_session_duration: must be positive"},
+		{"work_folder absolute", func(m map[string]any) { pool(m, 0)["work_folder"] = "/work" }, pp + ".work_folder: must be a relative path inside the runner directory"},
+		{"work_folder dotdot", func(m map[string]any) { pool(m, 0)["work_folder"] = "a/../../b" }, pp + ".work_folder: must be a relative path inside the runner directory"},
+		{"work_folder nested ok", func(m map[string]any) { pool(m, 0)["work_folder"] = "a/b" }, ""},
+		{"runner name 43 chars ok", func(m map[string]any) {
+			set(m, "battery.namespace", strings.Repeat("n", 20))
+			pool(m, 0)["name"] = strings.Repeat("p", 23)
+		}, ""},
+		{"runner name too long", func(m map[string]any) {
+			set(m, "battery.namespace", strings.Repeat("n", 20))
+			pool(m, 0)["name"] = strings.Repeat("p", 24)
+		}, `pools["` + strings.Repeat("p", 24) + `"].name: runner names "muster-<namespace>-<pool>-<12-character session id>" must be at most 64 characters; shorten the pool name or battery.namespace`},
 		{"template missing", func(m map[string]any) { delete(pool(m, 0), "microvm_template") }, pp + ".microvm_template: required"},
 		{"template no kernel", func(m map[string]any) { delete(pool(m, 0)["microvm_template"].(map[string]any), "kernel") }, pp + ".microvm_template: kernel: required"},
 		{"template id", func(m map[string]any) { pool(m, 0)["microvm_template"].(map[string]any)["id"] = "x" }, pp + ".microvm_template: id: managed by muster"},

@@ -18,6 +18,8 @@
       "labels": ["self-hosted", "linux", "x64", "muster", "ubuntu-24.04"],
       "size": 3,
       "max_concurrent": 6,
+      "max_session_duration": "6h",
+      "work_folder": "_work",
       "flintlock_hosts": ["host-a"],
       "create_commands": ["docker info"],
       "microvm_template": {
