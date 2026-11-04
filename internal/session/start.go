@@ -255,9 +255,12 @@ func (r *Registry) JobStarted(runnerName string) {
 func (r *Registry) JobCompleted(runnerName string) {
 	r.mu.Lock()
 	s := r.byRunnerLocked(runnerName)
+	if s != nil {
+		s.busy = true
+	}
 	r.mu.Unlock()
 	if s != nil {
-		s.post(mailbox{completed: true})
+		s.post(mailbox{busy: true, completed: true})
 	}
 }
 

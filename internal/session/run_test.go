@@ -293,3 +293,26 @@ func TestExecExitWithErrorFrameEnds(t *testing.T) {
 	close(exit)
 	wantEnd(t, e.endedInfo(), session.Ended, session.ReasonExecExit)
 }
+
+func TestJobCompletedMarksBusy(t *testing.T) {
+	e := newEnv(t)
+	c := e.capture()
+	e.start()
+	id, runner, _ := e.running(c)
+	e.Clock.Advance(4*time.Minute + 40*time.Second)
+	e.Registry.JobCompleted(runner)
+	if i, _ := e.info(id); !i.Busy {
+		t.Fatal("session not busy after JobCompleted")
+	}
+	if _, notBusy := e.Registry.Counts(testPool); notBusy != 0 {
+		t.Fatalf("activeNotBusy = %d, want 0", notBusy)
+	}
+	e.waitLog(`"msg":"job completed"`)
+	e.Clock.Advance(25 * time.Second)
+	time.Sleep(50 * time.Millisecond)
+	if st := e.state(id); st != session.Running {
+		t.Fatalf("state past the idle timeout within grace = %v, want RUNNING", st)
+	}
+	e.Clock.Advance(5 * time.Second)
+	wantEnd(t, e.endedInfo(), session.Ended, session.ReasonJobCompleted)
+}
