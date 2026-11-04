@@ -27,8 +27,7 @@ func (e *env) running(c *capture) (id, runner string, at time.Duration) {
 	} else {
 		waitFor(e.t, func() bool { return len(e.GitHub.Runners()) == 1 })
 	}
-	e.Clock.Advance(2 * time.Second)
-	e.pollOnce()
+	e.pollOnline(id)
 	e.waitState(id, session.Running)
 	i, _ := e.info(id)
 	return id, i.RunnerName, e.elapsed()
@@ -112,8 +111,7 @@ func TestEndOnRunnerDeregistered(t *testing.T) {
 	c := e.capture()
 	e.start()
 	e.running(c)
-	e.pollOnce()
-	wantEnd(t, e.endedInfo(), session.Ended, session.ReasonRunnerAbsent)
+	wantEnd(t, e.driveEnd(pollPeriod), session.Ended, session.ReasonRunnerAbsent)
 }
 
 func TestAbsentBeforeSeenIgnored(t *testing.T) {
@@ -240,8 +238,7 @@ func TestExecBrokenIsNotEnd(t *testing.T) {
 	e.start()
 	id := e.create(testPool)
 	<-read
-	e.Clock.Advance(2 * time.Second)
-	e.pollOnce()
+	e.pollOnline(id)
 	e.waitState(id, session.Running)
 	close(breakNow)
 	e.waitLog(`"msg":"exec stream broke; watching the runner through GitHub"`)
