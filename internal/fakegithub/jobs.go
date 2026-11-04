@@ -200,13 +200,12 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request, _ authInfo) 
 // is in progress once any job has started and until every job completes.
 // A completed run takes the conclusion of its last completed job.
 func (s *Server) runStateLocked(ids []int64) (status, conclusion string) {
-	var queued, running, completed int
+	var running, completed int
 	var last *jobState
 	for _, id := range ids {
 		j := s.jobs[id]
 		switch j.Status {
 		case jobQueued:
-			queued++
 		case jobInProgress:
 			running++
 		default:
