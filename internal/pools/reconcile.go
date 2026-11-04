@@ -25,10 +25,13 @@ type Admin interface {
 
 // Config is the input of Reconcile.
 type Config struct {
-	Admin  Admin
-	Config *config.Config
+	Namespace string
+	Pools     []config.Pool
+	Defaults  config.Defaults
+	Admin     Admin
 	// Prune deletes orphan pools (POOL-7). Without it they are only logged.
-	Prune  bool
+	Prune bool
+	// Logger is nil for slog.Default().
 	Logger *slog.Logger
 }
 
@@ -48,16 +51,16 @@ func Reconcile(ctx context.Context, cfg Config) (Result, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	ns := cfg.Config.Battery.Namespace
+	ns := cfg.Namespace
 	var res Result
 	var errs []error
 	configured := map[string]bool{}
-	for _, p := range cfg.Config.Pools {
+	for _, p := range cfg.Pools {
 		if err := ctx.Err(); err != nil {
 			return res, errors.Join(append(errs, err)...)
 		}
 		configured[p.Name] = true
-		outcome, err := apply(ctx, cfg.Admin, Spec(ns, p, cfg.Config.Defaults))
+		outcome, err := apply(ctx, cfg.Admin, Spec(ns, p, cfg.Defaults))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("pool %s: %w", p.Name, err))
 			continue

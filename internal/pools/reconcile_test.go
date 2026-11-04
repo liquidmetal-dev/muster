@@ -79,7 +79,8 @@ func newHarness(t *testing.T) *harness {
 func (h *harness) run(t *testing.T, prune bool) (pools.Result, error) {
 	t.Helper()
 	return pools.Reconcile(context.Background(), pools.Config{
-		Admin: h.src.Admin(), Config: h.cfg, Prune: prune,
+		Namespace: ns, Pools: h.cfg.Pools, Defaults: h.cfg.Defaults,
+		Admin: h.src.Admin(), Prune: prune,
 		Logger: slog.New(slog.NewTextHandler(h.log, nil)),
 	})
 }
@@ -251,7 +252,7 @@ func TestReconcileStopsOnCancelledContext(t *testing.T) {
 	h := newHarness(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := pools.Reconcile(ctx, pools.Config{Admin: h.src.Admin(), Config: h.cfg})
+	_, err := pools.Reconcile(ctx, pools.Config{Namespace: ns, Pools: h.cfg.Pools, Defaults: h.cfg.Defaults, Admin: h.src.Admin()})
 	if err == nil {
 		t.Fatal("Reconcile() = nil, want the context error")
 	}
