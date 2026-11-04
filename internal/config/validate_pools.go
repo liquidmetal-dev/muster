@@ -45,6 +45,8 @@ func validatePools(cfg *Config, errs *errorList) {
 			errs.add(pp+".max_concurrent", "must be at least 1")
 		}
 		validateHosts(pp+".flintlock_hosts", p.FlintlockHosts, errs)
+		validateStrategy(pp+".replenishment_strategy", p, errs)
+		validateTemplateNetwork(pp+".microvm_template", p, errs)
 		if p.MaxSessionDuration <= 0 {
 			errs.add(pp+".max_session_duration", "must be positive")
 		}
@@ -123,4 +125,49 @@ func validateHosts(path string, hosts []string, errs *errorList) {
 
 func isLocalPath(p string) bool {
 	return p != "" && filepath.IsLocal(p)
+}
+
+func validateStrategy(path string, p *Pool, errs *errorList) {
+	if p.ReplenishmentStrategy == nil {
+		return
+	}
+	s := p.ReplenishmentStrategy
+	switch s.Type {
+	case StrategyMinSizeThreshold:
+		switch {
+		case s.MinSize == 0:
+			errs.add(path+".min_size", "required for min_size_threshold")
+		case s.MinSize < 1 || s.MinSize > p.Size:
+			errs.add(path+".min_size", "must be between 1 and size")
+		}
+	case StrategyImmediateOnLease, StrategyReplaceOnDelete:
+		if s.MinSize != 0 {
+			errs.add(path+".min_size", "only valid with min_size_threshold")
+		}
+	default:
+		errs.add(path+".type", "must be one of %s, %s, %s", StrategyImmediateOnLease, StrategyMinSizeThreshold, StrategyReplaceOnDelete)
+	}
+}
+
+// validateTemplateNetwork rejects what battery rejects for a
+// DELETE_AND_REPLACE pool that can hold more than one VM: a fixed MAC or
+// static address would be copied to every VM.
+func validateTemplateNetwork(path string, p *Pool, errs *errorList) {
+	if p.Template == nil || (p.Size <= 1 && p.Strategy().Type != StrategyImmediateOnLease) {
+		return
+	}
+	const remedy = "every VM in the pool would get the same value; leave it unset unless size is 1 and replenishment_strategy.type is not immediate_on_lease"
+	for i, iface := range p.Template.GetInterfaces() {
+		field := ""
+		switch {
+		case iface.GetGuestMac() != "":
+			field = "guest_mac"
+		case iface.GetAddress() != nil:
+			field = "address"
+		default:
+			continue
+		}
+		errs.add(path, "interfaces[%d].%s: %s", i, field, remedy)
+		return
+	}
 }

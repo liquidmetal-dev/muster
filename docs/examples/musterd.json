@@ -11,7 +11,8 @@
   },
   "battery": {"addr": "poolmgrd.example.com:8443", "tls": {"ca_file": "/etc/muster/battery-ca.pem"}, "namespace": "muster"},
   "flintlock": {"tls": {"insecure": true}, "hosts": {"host-a": {"tls": {"ca_file": "/etc/muster/host-a-ca.pem"}}}},
-  "defaults": {"claim_deadline": "10m", "start_timeout": "2m", "idle_timeout": "5m", "max_session_duration": "6h"},
+  "defaults": {"claim_deadline": "10m", "start_timeout": "2m", "idle_timeout": "5m", "max_session_duration": "6h",
+               "heartbeat_interval": "30s", "heartbeat_expiry_threshold": "90s"},
   "pools": [
     {
       "name": "ubuntu-small",

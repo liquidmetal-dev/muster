@@ -326,3 +326,65 @@ func TestScopeCovers(t *testing.T) {
 		}
 	}
 }
+
+func TestValidatePoolReplenishment(t *testing.T) {
+	const pp = `pools["ubuntu-small"]`
+	strategy := func(v any) func(m map[string]any) {
+		return func(m map[string]any) { pool(m, 0)["replenishment_strategy"] = v }
+	}
+	iface := func(m map[string]any, k string, v any) {
+		tpl := pool(m, 0)["microvm_template"].(map[string]any)
+		tpl["interfaces"].([]any)[0].(map[string]any)[k] = v
+	}
+	const typeMsg = pp + ".replenishment_strategy.type: must be one of immediate_on_lease, min_size_threshold, replace_on_delete"
+	const netRemedy = ": every VM in the pool would get the same value; leave it unset unless size is 1 and replenishment_strategy.type is not immediate_on_lease"
+	runRuleCases(t, []ruleCase{
+		{"absent ok", nil, ""},
+		{"immediate_on_lease ok", strategy(map[string]any{"type": "immediate_on_lease"}), ""},
+		{"replace_on_delete ok", strategy(map[string]any{"type": "replace_on_delete"}), ""},
+		{"min_size_threshold ok", strategy(map[string]any{"type": "min_size_threshold", "min_size": 1}), ""},
+		{"min_size equal to size ok", strategy(map[string]any{"type": "min_size_threshold", "min_size": 3}), ""},
+		{"unknown type", strategy(map[string]any{"type": "bogus"}), typeMsg},
+		{"type missing", strategy(map[string]any{}), typeMsg},
+		{"min_size missing", strategy(map[string]any{"type": "min_size_threshold"}), pp + ".replenishment_strategy.min_size: required for min_size_threshold"},
+		{"min_size above size", strategy(map[string]any{"type": "min_size_threshold", "min_size": 4}), pp + ".replenishment_strategy.min_size: must be between 1 and size"},
+		{"min_size negative", strategy(map[string]any{"type": "min_size_threshold", "min_size": -1}), pp + ".replenishment_strategy.min_size: must be between 1 and size"},
+		{"min_size with other type", strategy(map[string]any{"type": "immediate_on_lease", "min_size": 1}), pp + ".replenishment_strategy.min_size: only valid with min_size_threshold"},
+		{"guest_mac with default strategy", func(m map[string]any) { iface(m, "guestMac", "02:00:00:00:00:01") },
+			pp + ".microvm_template: interfaces[0].guest_mac" + netRemedy},
+		{"address with default strategy", func(m map[string]any) {
+			iface(m, "address", map[string]any{"address": "10.0.0.2/24"})
+		}, pp + ".microvm_template: interfaces[0].address" + netRemedy},
+		{"guest_mac with size 2 replace_on_delete", func(m map[string]any) {
+			pool(m, 0)["size"] = 2
+			pool(m, 0)["replenishment_strategy"] = map[string]any{"type": "replace_on_delete"}
+			iface(m, "guestMac", "02:00:00:00:00:01")
+		}, pp + ".microvm_template: interfaces[0].guest_mac" + netRemedy},
+		{"guest_mac with size 1 replace_on_delete ok", func(m map[string]any) {
+			pool(m, 0)["size"] = 1
+			pool(m, 0)["replenishment_strategy"] = map[string]any{"type": "replace_on_delete"}
+			iface(m, "guestMac", "02:00:00:00:00:01")
+		}, ""},
+	})
+}
+
+func TestValidateHeartbeat(t *testing.T) {
+	runRuleCases(t, []ruleCase{
+		{"unset ok", func(m map[string]any) {
+			del(m, "defaults.heartbeat_interval")
+			del(m, "defaults.heartbeat_expiry_threshold")
+		}, ""},
+		{"interval negative", func(m map[string]any) { set(m, "defaults.heartbeat_interval", "-1s") },
+			"defaults.heartbeat_interval: must be positive"},
+		{"expiry negative", func(m map[string]any) { set(m, "defaults.heartbeat_expiry_threshold", "-1s") },
+			"defaults.heartbeat_expiry_threshold: must be positive"},
+		{"expiry equal to interval", func(m map[string]any) {
+			set(m, "defaults.heartbeat_interval", "90s")
+			set(m, "defaults.heartbeat_expiry_threshold", "90s")
+		}, "defaults.heartbeat_expiry_threshold: must be greater than defaults.heartbeat_interval"},
+		{"explicit ok", func(m map[string]any) {
+			set(m, "defaults.heartbeat_interval", "10s")
+			set(m, "defaults.heartbeat_expiry_threshold", "30s")
+		}, ""},
+	})
+}

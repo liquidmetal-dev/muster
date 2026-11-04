@@ -123,6 +123,10 @@ type Defaults struct {
 	StartTimeout       Duration `json:"start_timeout,omitempty"`
 	IdleTimeout        Duration `json:"idle_timeout,omitempty"`
 	MaxSessionDuration Duration `json:"max_session_duration,omitempty"`
+	// HeartbeatInterval and HeartbeatExpiryThreshold are set on every
+	// battery pool.
+	HeartbeatInterval        Duration `json:"heartbeat_interval,omitempty"`
+	HeartbeatExpiryThreshold Duration `json:"heartbeat_expiry_threshold,omitempty"`
 }
 
 // Pool is one runner pool (POOL-1).
@@ -140,10 +144,35 @@ type Pool struct {
 	WorkFolder     string   `json:"work_folder,omitempty"`
 	FlintlockHosts []string `json:"flintlock_hosts"`
 	CreateCommands []string `json:"create_commands,omitempty"`
+	// ReplenishmentStrategy absent means immediate_on_lease (POOL-2).
+	ReplenishmentStrategy *ReplenishmentStrategy `json:"replenishment_strategy,omitempty"`
 	// MicroVMTemplate is a flintlock MicroVMSpec in protojson.
 	MicroVMTemplate jsontext.Value `json:"microvm_template"`
 	// Template is the decoded MicroVMTemplate, set by Parse.
 	Template *types.MicroVMSpec `json:"-"`
+}
+
+// Replenishment strategy types, named as battery's ReplenishmentStrategyType.
+const (
+	StrategyImmediateOnLease = "immediate_on_lease"
+	StrategyMinSizeThreshold = "min_size_threshold"
+	StrategyReplaceOnDelete  = "replace_on_delete"
+)
+
+// ReplenishmentStrategy is how battery refills a pool.
+type ReplenishmentStrategy struct {
+	Type string `json:"type"`
+	// MinSize is required for, and only valid with, min_size_threshold.
+	MinSize int `json:"min_size,omitempty"`
+}
+
+// Strategy returns the pool's replenishment strategy, or immediate_on_lease
+// when none is configured.
+func (p Pool) Strategy() ReplenishmentStrategy {
+	if p.ReplenishmentStrategy == nil {
+		return ReplenishmentStrategy{Type: StrategyImmediateOnLease}
+	}
+	return *p.ReplenishmentStrategy
 }
 
 // Scope is where a pool registers its runners (GH-2).

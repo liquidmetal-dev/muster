@@ -26,6 +26,9 @@ const (
 	DefaultMaxSessionDuration = 6 * time.Hour
 	DefaultWorkFolder         = "_work"
 	DefaultShutdownGrace      = 30 * time.Second
+
+	DefaultHeartbeatInterval        = 30 * time.Second
+	DefaultHeartbeatExpiryThreshold = 90 * time.Second
 )
 
 // Parse decodes a configuration, applies defaults and runs every static
@@ -117,6 +120,8 @@ func applyDefaults(cfg *Config) {
 	defaultDuration(&cfg.Defaults.StartTimeout, DefaultStartTimeout)
 	defaultDuration(&cfg.Defaults.IdleTimeout, DefaultIdleTimeout)
 	defaultDuration(&cfg.Defaults.MaxSessionDuration, DefaultMaxSessionDuration)
+	defaultDuration(&cfg.Defaults.HeartbeatInterval, DefaultHeartbeatInterval)
+	defaultDuration(&cfg.Defaults.HeartbeatExpiryThreshold, DefaultHeartbeatExpiryThreshold)
 	for i := range cfg.Pools {
 		p := &cfg.Pools[i]
 		if p.MaxConcurrent == 0 && p.Size > 0 {
