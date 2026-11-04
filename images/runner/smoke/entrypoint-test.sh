@@ -83,6 +83,12 @@ extra_arg_exits_2() {
   expect extra_arg_exits_2 $?
 }
 
+empty_arg_exits_2() {
+  run 'abc' -- ''
+  [ "$code" = 2 ] && [[ "$err" == "usage: muster-runner"* ]] && [[ "$out" != *"args="* ]]
+  expect empty_arg_exits_2 $?
+}
+
 check_fails_without_dockerd() {
   run '' -- --check
   [ "$code" = 1 ] && [[ "$out" == *"fail docker"* ]] && [[ "$out" == *"ok user"* ]]
@@ -105,6 +111,7 @@ runner_runs_directly
 empty_stdin_exits_2
 bad_arg_exits_2
 extra_arg_exits_2
+empty_arg_exits_2
 check_fails_without_dockerd
 check_fails_on_non_exec_run_sh
 

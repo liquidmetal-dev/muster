@@ -49,12 +49,11 @@ check() {
 
 usage() { echo "usage: muster-runner [--check]" >&2; exit 2; }
 
-[ $# -le 1 ] || usage
-case "${1:-}" in
-  "") ;;
-  --check) check; exit ;;
-  *) usage ;;
-esac
+if [ $# -gt 0 ]; then
+  [ $# = 1 ] && [ "$1" = --check ] || usage
+  check
+  exit
+fi
 
 config="$(tr -d '[:space:]')"
 if [ -z "$config" ]; then
