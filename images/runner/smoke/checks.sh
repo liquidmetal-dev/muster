@@ -31,8 +31,16 @@ if [ "$state" != running ] && [ "$state" != degraded ]; then
   result boot 1 "system state is '$state' after 180 s"
 fi
 
-systemctl is-active --quiet guest-agent
-result guest_agent $? "guest-agent is $(systemctl is-active guest-agent)"
+# guest-agent exits without a vsock device, as in a container on a host with no vsock support.
+# There, check that it would start at boot and that its binary runs; the vm mode proves it starts.
+if [ -e /dev/vsock ]; then
+  systemctl is-active --quiet guest-agent
+  result guest_agent $? "guest-agent is $(systemctl is-active guest-agent)"
+else
+  echo "SMOKE: no /dev/vsock; guest_agent checks enablement only"
+  systemctl is-enabled --quiet guest-agent && guest-agent --version >/dev/null 2>&1
+  result guest_agent $? "guest-agent is $(systemctl is-enabled guest-agent), or guest-agent --version failed"
+fi
 
 cgroup="$(docker info -f '{{.CgroupVersion}}' 2>&1)"
 systemctl is-active --quiet docker && [ "$cgroup" = 2 ]

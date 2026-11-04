@@ -29,7 +29,10 @@ Each script uses the image in `IMAGE` (default `...:minimal-latest`).
 | `bash images/runner/smoke.sh container` | a boot under systemd in a privileged container: guest-agent, dockerd, containerd and `muster-runner --check` | docker |
 | `bash images/runner/smoke.sh vm` | a boot in Firecracker with the reference kernel: the container checks, plus DHCP, machine-id, DNS, HTTPS to GitHub, and a vsock connection from the host to guest-agent | `/dev/kvm`, sudo, docker, `mkfs.ext4`, iptables, `ip`, jq, python3 |
 
-The Images workflow runs the first three on each change under `images/`. The vm mode runs
+The Images workflow runs the first three on each change under `images/`. guest-agent stops
+when it has no vsock device. Where the container has no `/dev/vsock`, as on GitHub-hosted
+runners, the container mode checks only that guest-agent is enabled and that its binary
+runs. The vm mode is then the check that guest-agent starts and answers on vsock (IMG-6). The vm mode runs
 on a developer's host only. It downloads Firecracker v1.17.0 to
 `~/.cache/muster-smoke/`. It adds the TAP device `mstap0` (172.16.0.1/24), iptables rules
 and a dnsmasq container for the duration of the run, and removes them when it ends.
