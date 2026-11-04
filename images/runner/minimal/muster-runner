@@ -47,10 +47,13 @@ check() {
   return "$failed"
 }
 
+usage() { echo "usage: muster-runner [--check]" >&2; exit 2; }
+
+[ $# -le 1 ] || usage
 case "${1:-}" in
   "") ;;
   --check) check; exit ;;
-  *) echo "usage: muster-runner [--check]" >&2; exit 2 ;;
+  *) usage ;;
 esac
 
 config="$(tr -d '[:space:]')"
