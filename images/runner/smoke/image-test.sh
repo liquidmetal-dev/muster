@@ -3,8 +3,10 @@
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-IMAGE="${IMAGE:-ghcr.io/liquidmetal-dev/muster-runner:minimal-latest}"
-RUNNER_VERSION="${RUNNER_VERSION:-$(sed -n 's/^ARG RUNNER_VERSION=//p' "$here/../minimal/Dockerfile")}"
+# shellcheck source=images/runner/lib.sh
+. "$here/../lib.sh"
+IMAGE="${IMAGE:-$default_image}"
+RUNNER_VERSION="${RUNNER_VERSION:-$(dockerfile_runner_version "$here/../minimal/Dockerfile")}"
 
 failures=0
 
@@ -42,12 +44,9 @@ check_eq machine_id_empty 0 "$(in_image stat -c %s /etc/machine-id)"
 
 # A container, even a stopped one, shows Docker's own /etc/resolv.conf, so read the image layer.
 work="$(mktemp -d)"
-docker save "$IMAGE" -o "$work/image.tar"
-tar -xf "$work/image.tar" -C "$work" manifest.json
-layer="$(jq -r '.[0].Layers[0]' "$work/manifest.json")"
-tar -xf "$work/image.tar" -C "$work" "$layer"
+layer="$(image_layer "$IMAGE" "$work" 2>&1)"
 check_eq resolv_link ../run/systemd/resolve/stub-resolv.conf \
-  "$(tar -tvf "$work/$layer" etc/resolv.conf 2>&1 | sed -n 's/.* -> //p')"
+  "$(tar -tvf "$layer" etc/resolv.conf 2>&1 | sed -n 's/.* -> //p')"
 rm -rf "$work"
 
 check_eq enabled_units "enabled enabled enabled enabled enabled" \

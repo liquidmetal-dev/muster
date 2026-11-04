@@ -4,7 +4,9 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE="${IMAGE:-ghcr.io/liquidmetal-dev/muster-runner:minimal-latest}"
+# shellcheck source=images/runner/lib.sh
+. "$here/lib.sh"
+IMAGE="${IMAGE:-$default_image}"
 mode="${1:-container}"
 
 smoke_container() {
@@ -22,8 +24,17 @@ smoke_container() {
 firecracker_version=v1.17.0
 kernel_image=ghcr.io/liquidmetal-dev/firecracker-kernel:6.1-20260929-1349
 tap=mstap0
+subnet=172.16.0.0/24
 host_ip=172.16.0.1
+dhcp_range=172.16.0.10,172.16.0.50
+guest_mac=06:00:AC:10:00:02
 guest_agent_port=1024
+vm_rules=(
+  "INPUT -i $tap -j ACCEPT"
+  "FORWARD -i $tap -j ACCEPT"
+  "FORWARD -o $tap -j ACCEPT"
+  "POSTROUTING -t nat -s $subnet ! -o $tap -j MASQUERADE"
+)
 
 smoke_vm() {
   local missing=()
@@ -67,19 +78,11 @@ smoke_vm() {
 
   # The VM boots the image's own layer: a container export would carry Docker's resolv.conf,
   # hostname and hosts files instead of the image's.
-  docker save "$IMAGE" -o "$work/image.tar"
-  tar -xf "$work/image.tar" -C "$work" manifest.json
-  if [ "$(jq '.[0].Layers | length' "$work/manifest.json")" != 1 ]; then
-    echo "smoke.sh vm: $IMAGE must have exactly one layer" >&2
-    exit 2
-  fi
   local layer
-  layer="$(jq -r '.[0].Layers[0]' "$work/manifest.json")"
-  tar -xf "$work/image.tar" -C "$work" "$layer"
-  rm "$work/image.tar"
+  layer="$(image_layer "$IMAGE" "$work")" || exit 2
   mkdir "$work/rootfs"
-  sudo tar -xpf "$work/$layer" -C "$work/rootfs"
-  rm "$work/$layer"
+  sudo tar -xpf "$layer" -C "$work/rootfs"
+  rm "$layer"
   sudo install -D -m 0755 "$here/smoke/checks.sh" "$work/rootfs/usr/local/lib/muster-smoke/checks.sh"
   sudo install -m 0644 "$here/smoke/smoke.service" "$work/rootfs/etc/systemd/system/smoke.service"
   sudo ln -s ../smoke.service "$work/rootfs/etc/systemd/system/multi-user.target.wants/smoke.service"
@@ -89,7 +92,7 @@ smoke_vm() {
 
   sudo ip tuntap add "$tap" mode tap user "$(id -un)"
   tap_created=1
-  sudo ip addr add "$host_ip/24" dev "$tap"
+  sudo ip addr add "$host_ip/${subnet#*/}" dev "$tap"
   sudo ip link set "$tap" up
   forward_before="$(sysctl -n net.ipv4.ip_forward)"
   sudo sysctl -q -w net.ipv4.ip_forward=1
@@ -102,7 +105,7 @@ smoke_vm() {
   docker build -q -t muster-smoke-dnsmasq -f "$here/smoke/dnsmasq.Dockerfile" "$here/smoke" >/dev/null
   dnsmasq_ctr="$(docker run -d --network host --cap-add NET_ADMIN muster-smoke-dnsmasq \
     --no-daemon --port=0 --interface="$tap" --bind-interfaces \
-    --dhcp-range=172.16.0.10,172.16.0.50,12h --dhcp-option=option:dns-server,1.1.1.1)"
+    --dhcp-range="$dhcp_range,12h" --dhcp-option=option:dns-server,1.1.1.1)"
 
   cat >"$work/vm.json" <<JSON
 {
@@ -114,7 +117,7 @@ smoke_vm() {
     {"drive_id": "rootfs", "path_on_host": "$work/rootfs.ext4", "is_root_device": true, "is_read_only": false}
   ],
   "network-interfaces": [
-    {"iface_id": "eth0", "guest_mac": "06:00:AC:10:00:02", "host_dev_name": "$tap"}
+    {"iface_id": "eth0", "guest_mac": "$guest_mac", "host_dev_name": "$tap"}
   ],
   "vsock": {"guest_cid": 3, "uds_path": "$work/vsock.sock"},
   "machine-config": {"vcpu_count": 2, "mem_size_mib": 2048}
@@ -149,12 +152,6 @@ JSON
   grep -aEq 'SMOKE: DONE pass=[0-9]+ fail=0' "$work/console.log"
 }
 
-vm_rules=(
-  "INPUT -i $tap -j ACCEPT"
-  "FORWARD -i $tap -j ACCEPT"
-  "FORWARD -o $tap -j ACCEPT"
-  "POSTROUTING -t nat -s 172.16.0.0/24 ! -o $tap -j MASQUERADE"
-)
 
 cleanup_vm() {
   set +e

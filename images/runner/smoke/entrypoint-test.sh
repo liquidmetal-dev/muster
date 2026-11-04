@@ -3,7 +3,9 @@
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-IMAGE="${IMAGE:-ghcr.io/liquidmetal-dev/muster-runner:minimal-latest}"
+# shellcheck source=images/runner/lib.sh
+. "$here/../lib.sh"
+IMAGE="${IMAGE:-$default_image}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 

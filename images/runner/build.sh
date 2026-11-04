@@ -3,12 +3,14 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=images/runner/lib.sh
+. "$here/lib.sh"
 variant="${1:-minimal}"
 dir="$here/$variant"
 [ -f "$dir/Dockerfile" ] || { echo "build.sh: no Dockerfile for variant $variant" >&2; exit 2; }
 
 arch="${ARCH:-amd64}"
-runner_version="${RUNNER_VERSION:-$(sed -n 's/^ARG RUNNER_VERSION=//p' "$dir/Dockerfile")}"
+runner_version="${RUNNER_VERSION:-$(dockerfile_runner_version "$dir/Dockerfile")}"
 repo=ghcr.io/liquidmetal-dev/muster-runner
 tag="$repo:$variant-24.04-$runner_version"
 
