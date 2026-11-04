@@ -208,7 +208,8 @@ Sources live under `images/runner/`.
 - Kernel: the published `ghcr.io/liquidmetal-dev/firecracker-kernel` image at the immutable
   tag that `docs/adr/2026-10-27-guest-kernel.md` names. Muster builds no kernel.
 - CI: an amd64/arm64 build matrix on GitHub-hosted runners, a weekly check for new
-  `actions/runner` releases, and a smoke boot test under systemd.
+  `actions/runner` releases, and a smoke boot test under systemd in a container, with a local
+  Firecracker boot for developers.
 
 Operator notes to document: hosts pull images through containerd, so private registries
 need host-side credentials; the `full` image is large, so size the containerd thin pool

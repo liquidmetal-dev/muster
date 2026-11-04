@@ -167,7 +167,7 @@ most one job.
 - **IMG-5** Image CI MUST rebuild and publish on source changes and on new `actions/runner`
   releases (a scheduled check at least weekly).
 - **IMG-6** Image builds SHOULD be smoke-testable without flintlock (boot under systemd in a
-  container or qemu; assert that guest-agent and dockerd start and `muster-runner --check`
+  container or a microVM; assert that guest-agent and dockerd start and `muster-runner --check`
   succeeds).
 - **KRN-1** Muster MUST provide a verified reference guest kernel for amd64 and arm64, for
   Firecracker and for Cloud Hypervisor. Each one MUST be a kernel that

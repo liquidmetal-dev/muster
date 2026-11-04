@@ -80,3 +80,18 @@ Reconciliation deletes it.
 How long muster waits after SIGTERM for busy sessions to finish before it exits. Sessions
 still active at exit are left running, to be adopted by the next start.
 _Avoid_: Drain timeout
+
+## Images
+
+**Runner image**:
+The root volume that a session's VM boots, holding the runner and the services it needs.
+_Avoid_: Rootfs, template, base image
+
+**Image contract**:
+The paths, user, entrypoint and services that muster relies on in a runner image, and
+nothing more. Any image that meets it can serve a pool.
+_Avoid_: Image spec, image requirements
+
+**Image variant**:
+One of the reference runner images that the repository builds: `minimal`, `full` or `e2e`.
+_Avoid_: Flavour, edition

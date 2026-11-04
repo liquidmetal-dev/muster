@@ -18,6 +18,26 @@ func (e *env) pollOnce() {
 	waitFor(e.t, func() bool { return e.GitHub.RequestCount(fakegithub.PatternRepoRunners) >= want })
 }
 
+// pollOnline advances the clock past the fake runner's online delay, waits for the fake to list
+// the session's runner online, then polls. The fake changes runner state on its own goroutine,
+// so a poll that runs first sees the runner offline, and no other poll follows.
+func (e *env) pollOnline(id string) {
+	e.t.Helper()
+	i, _ := e.info(id)
+	e.Clock.Advance(2 * time.Second)
+	waitFor(e.t, func() bool { return runnerStatus(e.GitHub.Runners(), i.RunnerName) == "online" })
+	e.pollOnce()
+}
+
+func runnerStatus(runners []fakegithub.Runner, name string) string {
+	for _, r := range runners {
+		if r.Name == name {
+			return r.Status
+		}
+	}
+	return ""
+}
+
 func TestPollOnePerScope(t *testing.T) {
 	e := newEnv(t, withPools(testPoolConfig("linux"), testPoolConfig("linux2")))
 	e.start()
@@ -40,8 +60,7 @@ func TestPollOnlineMovesToRunning(t *testing.T) {
 	e.start()
 	id := e.create(testPool)
 	c.waitStdin(t)
-	e.Clock.Advance(2 * time.Second)
-	e.pollOnce()
+	e.pollOnline(id)
 	e.waitState(id, session.Running)
 	if i, _ := e.info(id); i.Busy {
 		t.Error("busy = true for an idle runner")
@@ -62,8 +81,7 @@ func TestPollBusyMarksBusy(t *testing.T) {
 	e.start()
 	id := e.create(testPool)
 	c.waitStdin(t)
-	e.Clock.Advance(2 * time.Second)
-	e.pollOnce()
+	e.pollOnline(id)
 	waitFor(t, func() bool { i, _ := e.info(id); return i.State == session.Running && i.Busy })
 	if a, nb := e.Registry.Counts(testPool); a != 1 || nb != 0 {
 		t.Fatalf("Counts = (%d, %d), want (1, 0)", a, nb)
@@ -76,8 +94,7 @@ func TestPollErrorIsNotAbsence(t *testing.T) {
 	e.start()
 	id := e.create(testPool)
 	c.waitStdin(t)
-	e.Clock.Advance(2 * time.Second)
-	e.pollOnce()
+	e.pollOnline(id)
 	e.waitState(id, session.Running)
 	e.GitHub.FailNext(fakegithub.PatternRepoRunners, fakegithub.Fault{Status: http.StatusInternalServerError})
 	e.pollOnce()
@@ -98,8 +115,7 @@ func TestPollDoesNotBlockOnSlowSession(t *testing.T) {
 	waitFor(t, func() bool {
 		return e.GitHub.RequestCount(fakegithub.PatternRepoJITConfig) == 2 && len(e.GitHub.Runners()) == 1
 	})
-	e.Clock.Advance(2 * time.Second)
-	e.pollOnce()
+	e.pollOnline(fast)
 	e.waitState(fast, session.Running)
 	if st := e.state(slow); st != session.Starting {
 		t.Fatalf("slow session = %v, want STARTING while its JIT request stalls", st)

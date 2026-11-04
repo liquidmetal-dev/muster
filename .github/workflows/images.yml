@@ -1,0 +1,24 @@
+name: Images
+
+on:
+  push:
+    branches: [main]
+    paths: ['images/**', '.github/workflows/images.yml']
+  pull_request:
+    paths: ['images/**', '.github/workflows/images.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  minimal-amd64:
+    name: minimal (amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - run: mise exec -- shellcheck images/runner/*.sh images/runner/smoke/*.sh images/runner/minimal/muster-runner
+      - run: bash images/runner/build.sh minimal
+      - run: bash images/runner/smoke/image-test.sh
+      - run: bash images/runner/smoke/entrypoint-test.sh
+      - run: bash images/runner/smoke.sh container

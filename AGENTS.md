@@ -17,7 +17,7 @@
 ## Toolchain
 
 - The project uses the latest stable Go release. Bump `mise.toml` and `go.mod` within a release cycle of each new Go minor (requirement PROJ-1).
-- `mise.toml` pins go, golangci-lint, buf and goreleaser. Run `mise install` once; CI installs the same versions.
+- `mise.toml` pins go, golangci-lint, buf, goreleaser and shellcheck. Run `mise install` once; CI installs the same versions.
 
 ## Decisions
 
