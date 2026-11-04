@@ -71,8 +71,9 @@ session id).
 Reconciliation releases it.
 
 **Orphan runner**:
-A runner with muster's namespace prefix that is not the runner named for any lease's pool and
-session id.
+A runner named for muster's namespace, one of its pools and a session id, that is not the
+runner named for any lease's pool and session id. A pool is muster's when it is configured or
+when one of muster's leases names it.
 Reconciliation deletes it.
 
 **Shutdown grace**:

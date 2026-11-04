@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/liquidmetal-dev/muster/internal/clock"
@@ -121,12 +122,21 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	pools := map[string]bool{}
+	for name := range r.scopes {
+		pools[name] = true
+	}
 	for _, l := range leases {
+		pools[l.Pool] = true
 		r.lease(ctx, l, runners)
 	}
 	keys := make([]runnerKey, 0, len(runners))
 	for k := range runners {
-		keys = append(keys, k)
+		if r.ours(k.name, pools) {
+			keys = append(keys, k)
+		} else {
+			r.log.Debug("reconcile: runner left alone", "runner", k.name)
+		}
 	}
 	slices.SortFunc(keys, func(a, b runnerKey) int { return cmp.Compare(a.name, b.name) })
 	for _, k := range keys {
@@ -135,6 +145,19 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	r.log.Info("reconciliation complete", "adopted", r.res.Adopted, "leases_released", r.res.LeasesReleased,
 		"runners_deleted", r.res.RunnersDeleted, "failed", r.res.Failed)
 	return r.res, nil
+}
+
+// ours reports whether name is a runner name of this namespace for one of
+// pools. The namespace prefix alone also matches the runners of a longer
+// namespace that starts with this one and a hyphen.
+func (r *reconciler) ours(name string, pools map[string]bool) bool {
+	for p := range pools {
+		prefix := config.RunnerNamePrefix(r.cfg.Namespace, p)
+		if strings.HasPrefix(name, prefix) && len(name)-len(prefix) == config.SessionIDLen {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *reconciler) list(ctx context.Context, scopes []github.Scope) ([]vmsource.LeaseInfo, map[runnerKey]github.Runner, error) {

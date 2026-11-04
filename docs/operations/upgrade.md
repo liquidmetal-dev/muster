@@ -28,7 +28,10 @@ each configured pool.
   musterd tracks it in RUNNING until an end signal: the job completes, the runner disappears
   from GitHub, the idle timeout, or the maximum session duration.
 - A lease with no such runner is released.
-- A runner with no such lease is deleted.
+- A runner with no such lease is deleted, if its name is `muster-<namespace>-<pool>-<session id>`
+  for a configured pool or for a pool that one of the leases names. Other runners are left
+  alone. This keeps musterd away from the runners of a second instance whose namespace starts
+  with this namespace and a hyphen (for example `muster` and `muster-x`).
 
 If musterd cannot read the lease or runner lists within 2 minutes, it exits with an error, so
 the supervisor can restart it. If one release or delete still fails after 3 tries, musterd logs
@@ -49,8 +52,9 @@ The drain only makes sure that no new session starts during the upgrade.
 ## Removing a pool or changing its scope
 
 Drain the pool first, and wait until its sessions have ended. musterd lists runners only in the
-scopes of the pools that are configured now. It cannot find runners in a scope that no pool
-uses any more, so it does not delete them.
+scopes of the pools that are configured now, and it deletes a runner of a removed pool only
+when a lease of that pool is still there. Other runners of a removed pool stay until you delete
+them.
 
 ## Two instances
 

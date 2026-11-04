@@ -24,7 +24,7 @@ type ShutdownConfig struct {
 	Dispatcher Drainer
 	Sessions   BusyWaiter
 	// Stop ends Registry.Run and returns once Run has returned.
-	Stop func()
+	Stop  func()
 	Grace time.Duration
 	// Clock is nil for clock.Real().
 	Clock clock.Clock

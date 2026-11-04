@@ -280,3 +280,31 @@ func TestRunContextCancelled(t *testing.T) {
 		t.Fatal("Run with a cancelled context succeeded")
 	}
 }
+
+func TestRunKeepsRunnerOfOtherNamespace(t *testing.T) {
+	e := newEnv(t)
+	other := "muster-" + testNS + "-x-" + poolLinux + "-" + idA
+	e.GitHub.NextRunner(holdIdle)
+	e.jit(repoA, other)
+	res, err := e.reconcile()
+	wantResult(t, res, reconcile.Result{}, err)
+	e.wantRunner(other, true)
+}
+
+func TestRunKeepsRunnerOfUnknownPoolWithoutLease(t *testing.T) {
+	e := newEnv(t)
+	name := e.priorRunner(repoA, poolOld, idA, holdIdle)
+	res, err := e.reconcile()
+	wantResult(t, res, reconcile.Result{}, err)
+	e.wantRunner(name, true)
+}
+
+func TestRunKeepsRunnerWithoutSessionID(t *testing.T) {
+	e := newEnv(t)
+	name := runnerName(poolLinux, "short")
+	e.GitHub.NextRunner(holdIdle)
+	e.jit(repoA, name)
+	res, err := e.reconcile()
+	wantResult(t, res, reconcile.Result{}, err)
+	e.wantRunner(name, true)
+}
