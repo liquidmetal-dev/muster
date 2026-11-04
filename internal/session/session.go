@@ -94,10 +94,20 @@ func (s *session) post(m mailbox) {
 		s.mb.absent = m.absent
 	}
 	s.mbmu.Unlock()
+	s.wake()
+}
+
+func (s *session) wake() {
 	select {
 	case s.notify <- struct{}{}:
 	default:
 	}
+}
+
+func (s *session) lostPending() bool {
+	s.mbmu.Lock()
+	defer s.mbmu.Unlock()
+	return s.mb.lost
 }
 
 func (s *session) drain() mailbox {

@@ -73,32 +73,46 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 		}
 	}
 	var run *execRun
-	select {
-	case <-ctx.Done():
-		abandon()
-		return nil, mailbox{}, ""
-	case <-timeout.C():
-		abandon()
-		return nil, mailbox{}, ReasonStartTimeout
-	case <-maxD.C():
-		abandon()
-		return nil, mailbox{}, ReasonMaxDuration
-	case l := <-result:
-		if l.run == nil {
-			cancelLaunch()
+	pending := false
+	for run == nil {
+		select {
+		case <-ctx.Done():
+			abandon()
+			return nil, mailbox{}, ""
+		case <-timeout.C():
+			abandon()
+			return nil, mailbox{}, ReasonStartTimeout
+		case <-maxD.C():
+			abandon()
+			return nil, mailbox{}, ReasonMaxDuration
+		case <-s.notify:
+			if s.lostPending() {
+				abandon()
+				return nil, mailbox{}, ReasonVMLost
+			}
+			pending = true
+		case l := <-result:
+			if l.run == nil {
+				cancelLaunch()
+				if reason, ok := expired(); ok {
+					return nil, mailbox{}, reason
+				}
+				return nil, mailbox{}, l.reason
+			}
+			run = l.run
+			run.cancel = cancelLaunch
 			if reason, ok := expired(); ok {
+				run.close()
 				return nil, mailbox{}, reason
 			}
-			return nil, mailbox{}, l.reason
-		}
-		run = l.run
-		run.cancel = cancelLaunch
-		if reason, ok := expired(); ok {
-			run.close()
-			return nil, mailbox{}, reason
 		}
 	}
 
+	// The launch wait only looked for a lost VM; the other facts are still
+	// in the mailbox.
+	if pending {
+		s.wake()
+	}
 	var carry mailbox
 	execDone := run.done
 	for {

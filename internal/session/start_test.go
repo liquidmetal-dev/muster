@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	poolmgrv1alpha1 "github.com/liquidmetal-dev/battery/api/proto/poolmgr/v1alpha1"
 	mvmexecv1 "github.com/liquidmetal-dev/flintlock/api/services/microvmexec/v1alpha1"
 	"google.golang.org/grpc/codes"
 
@@ -339,5 +340,22 @@ func TestExecExitWithErrorFrameWhileStarting(t *testing.T) {
 	got := e.endedInfo()
 	if got.State != session.Failed || got.Reason != session.ReasonExecError {
 		t.Fatalf("ended = %v %v, want FAILED exec_error", got.State, got.Reason)
+	}
+}
+
+func TestVMLostDuringLaunch(t *testing.T) {
+	e := newEnv(t)
+	release := e.Exec.HoldServerInfo()
+	defer release()
+	e.start()
+	e.waitSubscribed()
+	id := e.create(testPool)
+	waitFor(t, func() bool { return e.GitHub.RequestCount(fakegithub.PatternRepoJITConfig) == 1 })
+	e.waitState(id, session.Starting)
+	i, _ := e.info(id)
+	e.Pool.DeleteVM(testNS, testPool, i.VMID, poolmgrv1alpha1.EventType_VM_DELETED_DUE_TO_EXPIRY)
+	got := e.endedInfo()
+	if got.State != session.Failed || got.Reason != session.ReasonVMLost {
+		t.Fatalf("ended = %v %v, want FAILED vm_lost", got.State, got.Reason)
 	}
 }
