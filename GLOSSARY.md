@@ -55,3 +55,28 @@ _Avoid_: Poll cycle, sweep, tick
 The set of queued jobs that one repository returned during a poll pass, with the time musterd
 asked for it.
 _Avoid_: Snapshot, poll result
+
+## Startup and shutdown
+
+**Reconciliation**:
+The startup pass that pairs each of muster's leases with the runner named for the lease's
+pool and session id, before any demand is taken: pairs become adopted sessions, and orphans
+are removed.
+_Avoid_: Sync, recovery
+
+**Orphan lease**:
+A lease in muster's namespace with no listed runner named for its pool and session id, or a
+lease muster cannot track (its pool is no longer configured, or its request id is not a
+session id).
+Reconciliation releases it.
+
+**Orphan runner**:
+A runner named for muster's namespace, one of its pools and a session id, that is not the
+runner named for any lease's pool and session id. A pool is muster's when it is configured or
+when one of muster's leases names it.
+Reconciliation deletes it.
+
+**Shutdown grace**:
+How long muster waits after SIGTERM for busy sessions to finish before it exits. Sessions
+still active at exit are left running, to be adopted by the next start.
+_Avoid_: Drain timeout

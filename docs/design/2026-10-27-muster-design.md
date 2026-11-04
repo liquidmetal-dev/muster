@@ -232,6 +232,10 @@ adopted as a RUNNING session. A lease with no matching runner is released. A run
 matching lease is deleted. Adoption is what makes `drain --wait` followed by a restart a safe
 upgrade (REL-6).
 
+On SIGTERM musterd stops new sessions, waits up to `shutdown_grace` for busy sessions to end,
+then exits and leaves the rest for adoption. [docs/operations/upgrade.md](../operations/upgrade.md)
+gives the operator's view.
+
 ## 10. Fake GitHub and the e2e suite
 
 `internal/fakegithub` is an `httptest`-style server with an in-memory model of

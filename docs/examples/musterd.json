@@ -2,6 +2,7 @@
   "listen": {"addr": ":8443", "tls": {"cert_file": "/etc/muster/tls.crt", "key_file": "/etc/muster/tls.key"}},
   "api": {"addr": ":9443", "tls": {"insecure": true}},
   "metrics_addr": ":9090",
+  "shutdown_grace": "30s",
   "github": {
     "api_base_url": "https://api.github.com",
     "app": {"app_id": 123, "installation_id": 456, "private_key_file": "/etc/muster/app.pem"},

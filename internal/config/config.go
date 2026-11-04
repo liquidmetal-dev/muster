@@ -16,12 +16,15 @@ type Config struct {
 	// API is the gRPC API listener. Nil means the API is not served.
 	API *API `json:"api,omitempty"`
 	// MetricsAddr serves Prometheus metrics. Defaults to ":9090".
-	MetricsAddr string    `json:"metrics_addr,omitempty"`
-	GitHub      GitHub    `json:"github"`
-	Battery     Battery   `json:"battery"`
-	Flintlock   Flintlock `json:"flintlock"`
-	Defaults    Defaults  `json:"defaults"`
-	Pools       []Pool    `json:"pools"`
+	MetricsAddr string `json:"metrics_addr,omitempty"`
+	// ShutdownGrace is how long musterd waits on SIGTERM for busy
+	// sessions to end. Defaults to 30s.
+	ShutdownGrace Duration  `json:"shutdown_grace,omitempty"`
+	GitHub        GitHub    `json:"github"`
+	Battery       Battery   `json:"battery"`
+	Flintlock     Flintlock `json:"flintlock"`
+	Defaults      Defaults  `json:"defaults"`
+	Pools         []Pool    `json:"pools"`
 }
 
 // Listen is the webhook listener.

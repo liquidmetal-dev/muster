@@ -100,6 +100,7 @@ type Registry struct {
 	groupIDs map[string]int64
 	runCtx   context.Context
 	stopped  bool
+	changed  chan struct{}
 	wg       sync.WaitGroup
 }
 
@@ -130,6 +131,7 @@ func New(cfg Config) (*Registry, error) {
 		random:   rand.Reader,
 		sessions: map[string]*session{},
 		groupIDs: map[string]int64{},
+		changed:  make(chan struct{}),
 	}
 	for _, p := range cfg.Pools {
 		scope, err := github.ScopeFromConfig(p.Scope)
@@ -193,6 +195,36 @@ func (r *Registry) Create(_ context.Context, poolName string) error {
 	r.wg.Add(1)
 	go r.runSession(r.runCtx, s)
 	return nil
+}
+
+// WaitNotBusy returns once no busy session is left in the registry, or
+// with ctx.Err() when ctx ends first. A busy session counts until its
+// cleanup has finished.
+func (r *Registry) WaitNotBusy(ctx context.Context) error {
+	for {
+		r.mu.Lock()
+		busy := 0
+		for _, s := range r.sessions {
+			if s.busy {
+				busy++
+			}
+		}
+		ch := r.changed
+		r.mu.Unlock()
+		if busy == 0 {
+			return nil
+		}
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (r *Registry) signalLocked() {
+	close(r.changed)
+	r.changed = make(chan struct{})
 }
 
 // Counts implements dispatch.Sessions.
