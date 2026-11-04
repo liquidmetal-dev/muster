@@ -113,13 +113,13 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 			run.close()
 			return nil, mailbox{}, ReasonMaxDuration
 		case res := <-execDone:
-			if res.err != nil {
+			if res.code < 0 {
 				s.logBrokenStream(res.err)
 				execDone = nil
 				run.broken = true
 				continue
 			}
-			s.log.Warn("runner exited before it came online", "exit_code", res.code)
+			s.log.Warn("runner exited before it came online", "exit_code", res.code, "err", res.err)
 			run.close()
 			return nil, mailbox{}, ReasonExecError
 		case <-s.notify:

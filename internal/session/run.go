@@ -51,12 +51,12 @@ func (r *Registry) running(ctx context.Context, s *session, run *execRun, carry 
 		case <-ctx.Done():
 			return Failed, ""
 		case res := <-execDone:
-			if res.err != nil {
+			if res.code < 0 {
 				s.logBrokenStream(res.err)
 				execDone = nil
 				continue
 			}
-			s.log.Info("runner exited", "exit_code", res.code)
+			s.log.Info("runner exited", "exit_code", res.code, "err", res.err)
 			return Ended, ReasonExecExit
 		case <-idleC:
 			return Ended, ReasonIdleTimeout

@@ -327,3 +327,17 @@ func TestMaxDurationWhileStarting(t *testing.T) {
 		t.Fatalf("ended after %v, want before the 2m start timeout", el)
 	}
 }
+
+func TestExecExitWithErrorFrameWhileStarting(t *testing.T) {
+	e := newEnv(t)
+	e.setHandler(func(_ context.Context, _ *mvmexecv1.ExecStart, stdin io.Reader, _, _ io.Writer) fakeexec.Result {
+		_, _ = io.Copy(io.Discard, stdin)
+		return fakeexec.Result{ExitCode: 1, ErrorFrame: "guest agent error"}
+	})
+	e.start()
+	e.create(testPool)
+	got := e.endedInfo()
+	if got.State != session.Failed || got.Reason != session.ReasonExecError {
+		t.Fatalf("ended = %v %v, want FAILED exec_error", got.State, got.Reason)
+	}
+}

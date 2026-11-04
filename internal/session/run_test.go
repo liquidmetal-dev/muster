@@ -275,3 +275,21 @@ func TestFirstEndSignalWins(t *testing.T) {
 		t.Fatalf("ReleaseVM calls = %d, want 1", n)
 	}
 }
+
+func TestExecExitWithErrorFrameEnds(t *testing.T) {
+	e := newEnv(t)
+	exit := make(chan struct{})
+	e.setHandler(func(ctx context.Context, _ *mvmexecv1.ExecStart, stdin io.Reader, _, _ io.Writer) fakeexec.Result {
+		_, _ = io.Copy(io.Discard, stdin)
+		select {
+		case <-exit:
+			return fakeexec.Result{ExitCode: 2, ErrorFrame: "guest agent error"}
+		case <-ctx.Done():
+			return fakeexec.Result{}
+		}
+	})
+	e.start()
+	e.running(nil)
+	close(exit)
+	wantEnd(t, e.endedInfo(), session.Ended, session.ReasonExecExit)
+}
