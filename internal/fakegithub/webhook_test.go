@@ -214,3 +214,31 @@ func TestDeliveriesReturnsCopies(t *testing.T) {
 		t.Fatal("mutating the Deliveries() result changed what Redeliver sent")
 	}
 }
+
+func TestStartAndCancelJobDeliver(t *testing.T) {
+	url, ch := hook(t)
+	e := start(t, withHook(url))
+	seed(e)
+	a := queue(t, e, orgRepo, "x")
+	recv(t, ch)
+	b, err := e.fake.QueueJobInRun(a.RunID, []string{"y"})
+	if err != nil {
+		t.Fatalf("QueueJobInRun: %v", err)
+	}
+	if ev := parseEvent(t, recv(t, ch), hookSecret); ev.GetAction() != "queued" || ev.GetWorkflowJob().GetID() != b.ID {
+		t.Fatalf("queued event %+v", ev)
+	}
+	if err := e.fake.StartJob(a.ID); err != nil {
+		t.Fatalf("StartJob: %v", err)
+	}
+	if ev := parseEvent(t, recv(t, ch), hookSecret); ev.GetAction() != "in_progress" || ev.GetWorkflowJob().GetID() != a.ID {
+		t.Fatalf("in_progress event %+v", ev)
+	}
+	if err := e.fake.CancelJob(b.ID); err != nil {
+		t.Fatalf("CancelJob: %v", err)
+	}
+	ev := parseEvent(t, recv(t, ch), hookSecret)
+	if ev.GetAction() != "completed" || ev.GetWorkflowJob().GetID() != b.ID || ev.GetWorkflowJob().GetConclusion() != "cancelled" {
+		t.Fatalf("completed event %+v", ev)
+	}
+}
