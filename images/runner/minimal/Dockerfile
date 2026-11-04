@@ -49,6 +49,7 @@ RUN case "${TARGETARCH}" in \
 
 COPY 10-dhcp.network /etc/systemd/network/10-dhcp.network
 COPY --chmod=0440 sudoers-runner /etc/sudoers.d/runner
+COPY --chmod=0755 muster-runner /usr/local/bin/muster-runner
 
 RUN groupadd --gid 1000 runner && \
     useradd --uid 1000 --gid 1000 --groups docker --create-home --shell /bin/bash runner && \

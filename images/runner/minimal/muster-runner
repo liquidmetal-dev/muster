@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Runner image entrypoint. Reads the encoded JIT configuration from stdin and execs run.sh.
+# --check verifies the image contract.
+set -euo pipefail
+
+runner_dir=/opt/actions-runner
+self=/usr/local/bin/muster-runner
+
+as_runner() {
+  if [ "$(id -u)" = 0 ]; then runuser -u runner -- "$@"; else "$@"; fi
+}
+
+check() {
+  local failed=0
+  report() {
+    if [ "$2" = ok ]; then echo "ok $1"; else echo "fail $1: $3"; failed=1; fi
+  }
+
+  if [ "$(id -u runner 2>/dev/null)" != 1000 ]; then
+    report user fail "user runner does not have uid 1000"
+  elif ! id -nG runner | tr ' ' '\n' | grep -qx docker; then
+    report user fail "user runner is not in group docker"
+  elif ! as_runner sudo -n true 2>/dev/null; then
+    report user fail "user runner has no passwordless sudo"
+  else
+    report user ok
+  fi
+
+  if [ "$(stat -c %U "$runner_dir" 2>/dev/null)" = runner ]; then
+    report runner_dir ok
+  else
+    report runner_dir fail "$runner_dir is missing or not owned by runner"
+  fi
+
+  if [ -x "$runner_dir/run.sh" ] && [ "$(stat -c %U "$runner_dir/run.sh")" = runner ]; then
+    report run_sh ok
+  else
+    report run_sh fail "$runner_dir/run.sh is missing, not executable or not owned by runner"
+  fi
+
+  if as_runner docker info >/dev/null 2>&1; then
+    report docker ok
+  else
+    report docker fail "docker info as runner failed"
+  fi
+
+  return "$failed"
+}
+
+case "${1:-}" in
+  "") ;;
+  --check) check; exit ;;
+  *) echo "usage: muster-runner [--check]" >&2; exit 2 ;;
+esac
+
+config="$(tr -d '[:space:]')"
+if [ -z "$config" ]; then
+  echo "muster-runner: no JIT configuration on stdin" >&2
+  exit 2
+fi
+
+# run.sh refuses to run as root.
+if [ "$(id -u)" = 0 ]; then
+  exec runuser -u runner -- "$self" <<<"$config"
+fi
+
+cd "$runner_dir"
+exec ./run.sh --jitconfig "$config"
