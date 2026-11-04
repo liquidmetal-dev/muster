@@ -87,6 +87,8 @@ type env struct {
 	Counters *reconcile.Counters
 
 	ended chan session.Info
+	// stop ends Registry.Run and waits for it to return.
+	stop func()
 }
 
 // newEnv wires a running session registry to the fake poolmgrd and fake
@@ -187,10 +189,14 @@ func (e *env) startRegistry() {
 		defer close(done)
 		_ = e.Registry.Run(ctx)
 	}()
-	e.t.Cleanup(func() {
-		cancel()
-		<-done
-	})
+	var once sync.Once
+	e.stop = func() {
+		once.Do(func() {
+			cancel()
+			<-done
+		})
+	}
+	e.t.Cleanup(e.stop)
 	waitFor(e.t, func() bool {
 		return !errors.Is(e.Registry.Create(context.Background(), "\x00probe"), session.ErrNotRunning)
 	})
