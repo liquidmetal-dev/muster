@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -38,8 +39,11 @@ func validatePools(cfg *Config, errs *errorList) {
 		}
 		validateScope(pp+".scope", p.Scope, errs)
 		validateLabels(pp+".labels", p.Labels, errs)
-		if p.Size < 1 {
+		switch {
+		case p.Size < 1:
 			errs.add(pp+".size", "must be at least 1")
+		case p.Size > math.MaxInt32:
+			errs.add(pp+".size", "must be at most %d", math.MaxInt32)
 		}
 		if p.MaxConcurrent < 1 {
 			errs.add(pp+".max_concurrent", "must be at least 1")

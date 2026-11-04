@@ -348,6 +348,8 @@ func TestValidatePoolReplenishment(t *testing.T) {
 		{"type missing", strategy(map[string]any{}), typeMsg},
 		{"min_size missing", strategy(map[string]any{"type": "min_size_threshold"}), pp + ".replenishment_strategy.min_size: required for min_size_threshold"},
 		{"min_size above size", strategy(map[string]any{"type": "min_size_threshold", "min_size": 4}), pp + ".replenishment_strategy.min_size: must be between 1 and size"},
+		{"size above int32", func(m map[string]any) { pool(m, 0)["size"] = 2147483648 }, pp + ".size: must be at most 2147483647"},
+		{"size at int32 max ok", func(m map[string]any) { pool(m, 0)["size"] = 2147483647 }, ""},
 		{"min_size negative", strategy(map[string]any{"type": "min_size_threshold", "min_size": -1}), pp + ".replenishment_strategy.min_size: must be between 1 and size"},
 		{"min_size with other type", strategy(map[string]any{"type": "immediate_on_lease", "min_size": 1}), pp + ".replenishment_strategy.min_size: only valid with min_size_threshold"},
 		{"guest_mac with default strategy", func(m map[string]any) { iface(m, "guestMac", "02:00:00:00:00:01") },

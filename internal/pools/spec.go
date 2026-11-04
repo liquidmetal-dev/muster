@@ -21,7 +21,7 @@ func Spec(namespace string, p config.Pool, d config.Defaults) *poolmgrv1alpha1.P
 		Name:                     p.Name,
 		Namespace:                namespace,
 		MicrovmTemplate:          tpl,
-		Size:                     int32(p.Size), //nolint:gosec // validated small positive
+		Size:                     int32(p.Size), //nolint:gosec // config validation bounds size to int32
 		FlintlockHosts:           p.FlintlockHosts,
 		ReplenishmentStrategy:    strategy(p.Strategy()),
 		CreateCommands:           p.CreateCommands,
