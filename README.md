@@ -13,6 +13,18 @@ and deletes the VM when the job ends. It is part of the
 
 > **Status:** pre-alpha. Nothing runs yet; this repository holds the scaffold and the design.
 
+## Docs
+
+- [Quick start](docs/quick-start.md)
+- [Configuration reference](docs/configuration.md)
+- [Runner image contract](docs/image-contract.md)
+- Operations: [installing musterd](docs/operations/install.md),
+  [registering flintlock hosts](docs/operations/hosts.md),
+  [capacity](docs/operations/capacity.md), [observability](docs/operations/observability.md),
+  [upgrading musterd](docs/operations/upgrade.md)
+- [Manual end-to-end runbook](docs/runbooks/e2e-manual-verification.md)
+- [Releasing muster](docs/releasing.md)
+
 ## Design
 
 - [Requirements](docs/design/2026-10-27-muster-requirements.md)
@@ -20,11 +32,6 @@ and deletes the VM when the job ends. It is part of the
 - ADR: [stateless musterd](docs/adr/2026-10-27-stateless-musterd.md)
 - ADR: [battery as the VM source](docs/adr/2026-10-27-battery-as-vm-source.md)
 - ADR: [packaging and the systemd unit](docs/adr/2026-11-05-packaging-and-systemd-unit.md)
-
-## Install and release
-
-- [Installing musterd](docs/operations/install.md)
-- [Releasing muster](docs/releasing.md)
 
 ## Build and test
 
