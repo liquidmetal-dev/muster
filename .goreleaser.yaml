@@ -1,0 +1,145 @@
+version: 2
+
+project_name: muster
+
+release:
+  prerelease: auto
+
+snapshot:
+  # A prerelease-shaped version, so every snapshot builds packages whose
+  # conventional names carry the "~" that file_name_template replaces.
+  version_template: "{{ incpatch .Version }}-snapshot.{{ .ShortCommit }}"
+
+builds:
+  - id: musterd
+    main: ./cmd/musterd
+    binary: musterd
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags: &ldflags
+      - -s -w
+      - -X github.com/liquidmetal-dev/muster/internal/version.Version=v{{ .Version }}
+      - -X github.com/liquidmetal-dev/muster/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/liquidmetal-dev/muster/internal/version.Date={{ .Date }}
+  - id: musterctl
+    main: ./cmd/musterctl
+    binary: musterctl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags: *ldflags
+
+archives:
+  - id: musterd
+    ids:
+      - musterd
+    formats:
+      - tar.gz
+    name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - deploy/systemd/musterd.service
+      - deploy/systemd/muster.sysusers
+      - docs/examples/musterd.json
+  - id: musterctl
+    ids:
+      - musterctl
+    formats:
+      - tar.gz
+    name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+dockers_v2:
+  - id: musterd
+    ids:
+      - musterd
+    images:
+      - ghcr.io/liquidmetal-dev/musterd
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    sbom: false
+    labels:
+      org.opencontainers.image.source: https://github.com/liquidmetal-dev/muster
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: Apache-2.0
+
+nfpms:
+  - id: musterd
+    ids:
+      - musterd
+    package_name: musterd
+    # GitHub renames "~" to "." on upload, which would break checksums.txt.
+    file_name_template: &pkgname '{{ replace .ConventionalFileName "~" "." }}'
+    formats: &formats
+      - deb
+      - rpm
+    vendor: liquidmetal-dev
+    maintainer: &maintainer liquidmetal-dev maintainers <https://github.com/liquidmetal-dev/muster>
+    homepage: &homepage https://github.com/liquidmetal-dev/muster
+    license: &license Apache-2.0
+    description: musterd runs each GitHub Actions job in a fresh microVM.
+    bindir: /usr/bin
+    dependencies:
+      - systemd
+    contents:
+      - src: deploy/systemd/musterd.service
+        dst: /usr/lib/systemd/system/musterd.service
+      - src: deploy/systemd/muster.sysusers
+        dst: /usr/lib/sysusers.d/muster.conf
+      - src: docs/examples/musterd.json
+        dst: /usr/share/muster/musterd.json.example
+      - dst: /etc/muster
+        type: dir
+        file_info:
+          mode: 0750
+    scripts:
+      postinstall: deploy/packaging/postinstall.sh
+  - id: musterctl
+    ids:
+      - musterctl
+    package_name: musterctl
+    file_name_template: *pkgname
+    formats: *formats
+    vendor: liquidmetal-dev
+    maintainer: *maintainer
+    homepage: *homepage
+    license: *license
+    description: musterctl is the command line client for musterd.
+    bindir: /usr/bin
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^(docs|test|ci|chore)(\([^)]*\))?!?:'
+      - "Merge pull request"
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
