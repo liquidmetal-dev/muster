@@ -23,7 +23,7 @@ import (
 
 // Histogram buckets, in seconds.
 var (
-	claimBuckets   = []float64{1, 2, 5, 10, 20, 30, 60, 120, 300, 600}
+	latencyBuckets = []float64{1, 2, 5, 10, 20, 30, 60, 120, 300, 600}
 	sessionBuckets = []float64{30, 60, 300, 600, 1800, 3600, 7200, 14400, 28800}
 	pollBuckets    = []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
 )
@@ -88,10 +88,10 @@ func New(cfg Config) *Metrics {
 			Name: "muster_claim_exhaustions_total", Help: "VM claim attempts that found the pool exhausted.",
 		}, []string{"pool"}),
 		claimDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "muster_claim_duration_seconds", Help: "Time from CLAIMING to a claimed VM, backoff included.", Buckets: claimBuckets,
+			Name: "muster_claim_duration_seconds", Help: "Time from CLAIMING to a claimed VM, backoff included.", Buckets: latencyBuckets,
 		}, []string{"pool"}),
 		online: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "muster_queued_to_online_seconds", Help: "Time from the creation of a session to its runner coming online.", Buckets: claimBuckets,
+			Name: "muster_queued_to_online_seconds", Help: "Time from the creation of a session to its runner coming online.", Buckets: latencyBuckets,
 		}, []string{"pool"}),
 		sessionDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "muster_session_duration_seconds", Help: "Time from the creation of a session until it finished.", Buckets: sessionBuckets,

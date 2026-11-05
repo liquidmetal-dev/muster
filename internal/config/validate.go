@@ -177,8 +177,6 @@ func validateDefaults(cfg *Config, errs *errorList) {
 	}
 }
 
-// validateAddr requires host:port with a numeric port in 1..65535.
-// net.SplitHostPort alone accepts ":" with an empty port.
 func validateLog(l Log, errs *errorList) {
 	switch l.Format {
 	case LogFormatJSON, LogFormatText:
@@ -192,6 +190,8 @@ func validateLog(l Log, errs *errorList) {
 	}
 }
 
+// validateAddr requires host:port with a numeric port in 1..65535.
+// net.SplitHostPort alone accepts ":" with an empty port.
 func validateAddr(path, addr string, errs *errorList) {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
