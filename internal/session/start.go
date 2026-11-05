@@ -87,6 +87,7 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 			return nil, mailbox{}, ReasonMaxDuration
 		case <-s.notify:
 			if s.lostPending() {
+				s.log.Warn("VM lost")
 				abandon()
 				return nil, mailbox{}, ReasonVMLost
 			}

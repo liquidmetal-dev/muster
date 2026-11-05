@@ -49,7 +49,7 @@ func (r *Registry) Adopt(ctx context.Context, a Adoption) error {
 		// The lease went away after it was listed, so Acquire claimed a
 		// new VM that the runner never ran on.
 		if err := r.cfg.Source.Release(ctx, vm); err != nil {
-			r.log.Warn("release replacement VM", "session", id, "vm", vm.ID(), "err", err)
+			r.log.Warn("release replacement VM", "session_id", id, "pool", p.cfg.Name, "runner_name", name, "vm_id", vm.ID(), "err", err)
 		}
 		return fmt.Errorf("%w: lease %s has VM %s, Acquire returned %s", ErrAdoptMismatch, id, a.Lease.VMID, vm.ID())
 	}

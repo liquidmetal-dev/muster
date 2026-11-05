@@ -47,6 +47,7 @@ type mailbox struct {
 	absent    bool
 	completed bool
 	lost      bool
+	expiring  bool
 }
 
 func newSession(id string, p *pool, runner string) *session {
@@ -60,9 +61,15 @@ func newSession(id string, p *pool, runner string) *session {
 }
 
 // observe records that a poll listed the runner; only then can a later
-// absence end the session.
+// absence end the session. It runs on the session goroutine, so the VM
+// events are logged through the session's logger.
 func (s *session) observe(m mailbox) {
 	s.seen = s.seen || m.listed || m.online
+	if m.lost {
+		s.log.Warn("VM lost")
+	} else if m.expiring {
+		s.log.Warn("VM lease expiring")
+	}
 }
 
 func (s *session) logBrokenStream(err error) {
@@ -90,6 +97,7 @@ func (s *session) post(m mailbox) {
 	s.mb.busy = s.mb.busy || m.busy
 	s.mb.completed = s.mb.completed || m.completed
 	s.mb.lost = s.mb.lost || m.lost
+	s.mb.expiring = s.mb.expiring || m.expiring
 	if m.polled {
 		s.mb.absent = m.absent
 	}
@@ -120,9 +128,9 @@ func (s *session) drain() mailbox {
 
 func (r *Registry) runSession(ctx context.Context, s *session) {
 	defer r.wg.Done()
-	s.log = r.log.With("session", s.id, "pool", s.pool.cfg.Name, "runner", s.runner)
+	s.log = r.log.With("session_id", s.id, "pool", s.pool.cfg.Name, "runner_name", s.runner)
 	if s.adopted {
-		s.log = s.log.With("vm", s.vmID)
+		s.log = s.log.With("vm_id", s.vmID)
 	}
 	outcome, reason := r.drive(ctx, s)
 	if ctx.Err() != nil {

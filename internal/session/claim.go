@@ -29,7 +29,7 @@ func (r *Registry) claim(ctx context.Context, s *session) (Reason, bool) {
 			s.vmID = vm.ID()
 			s.claimedAt = r.clock.Now()
 			r.mu.Unlock()
-			s.log = s.log.With("vm", vm.ID())
+			s.log = s.log.With("vm_id", vm.ID())
 			select {
 			case <-deadline.C():
 				return ReasonClaimDeadline, false

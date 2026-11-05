@@ -47,12 +47,10 @@ func (r *Registry) handleEvent(ev vmsource.Event) {
 	if s == nil {
 		return
 	}
-	log := r.log.With("session", s.id, "pool", ev.Pool, "vm", ev.VMID)
 	switch ev.Type {
 	case vmsource.EventVMLost:
-		log.Warn("VM lost")
 		s.post(mailbox{lost: true})
 	case vmsource.EventVMExpiring:
-		log.Warn("VM lease expiring")
+		s.post(mailbox{expiring: true})
 	}
 }
