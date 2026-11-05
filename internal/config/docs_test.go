@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"fmt"
 	"os"
 	"reflect"
 	"regexp"
@@ -59,8 +58,6 @@ func readDoc(t *testing.T, path string) string {
 	return string(b)
 }
 
-// section returns the text from the heading line to the next heading of
-// the same level.
 func section(doc, heading string) string {
 	_, rest, ok := strings.Cut(doc, "\n"+heading+"\n")
 	if !ok {
@@ -172,18 +169,35 @@ func TestConfigurationDocDefaults(t *testing.T) {
 	}
 }
 
-// documentedDefaults maps each field path to the Default cell of its
-// row, for the rows of a Field | Type | Default | Notes table that give
-// a default.
+// fieldRow splits a Markdown table row whose first cell is a backticked
+// field path. Every check reads rows through it, so a row counts the same
+// for all of them.
+func fieldRow(line string) (path string, cells []string, ok bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "|") || !strings.HasSuffix(line, "|") {
+		return "", nil, false
+	}
+	cells = strings.Split(line[1:len(line)-1], "|")
+	for i := range cells {
+		cells[i] = strings.TrimSpace(cells[i])
+	}
+	first := cells[0]
+	if len(first) < 3 || first[0] != '`' || first[len(first)-1] != '`' {
+		return "", nil, false
+	}
+	return first[1 : len(first)-1], cells, true
+}
+
+// documentedDefaults reads the Default cell of Field | Type | Default |
+// Notes rows.
 func documentedDefaults(doc string) map[string]string {
 	out := map[string]string{}
 	for line := range strings.Lines(doc) {
-		cells := strings.Split(strings.TrimSpace(line), "|")
-		if len(cells) != 6 || !strings.HasPrefix(strings.TrimSpace(cells[1]), "`") {
+		path, cells, ok := fieldRow(line)
+		if !ok || len(cells) != 4 {
 			continue
 		}
-		path := strings.Trim(strings.TrimSpace(cells[1]), "`")
-		switch def := strings.TrimSpace(cells[3]); {
+		switch def := cells[2]; {
 		case def == "", def == "none", strings.HasPrefix(def, "required"):
 		default:
 			out[path] = def
@@ -192,11 +206,9 @@ func documentedDefaults(doc string) map[string]string {
 	return out
 }
 
-// tableRow returns the Markdown table row whose first cell is `path`.
 func tableRow(doc, path string) string {
-	prefix := fmt.Sprintf("| `%s` |", path)
 	for line := range strings.Lines(doc) {
-		if strings.HasPrefix(line, prefix) {
+		if p, _, ok := fieldRow(line); ok && p == path {
 			return strings.TrimSpace(line)
 		}
 	}
@@ -207,8 +219,6 @@ const quickStartDoc = "../../docs/quick-start.md"
 
 var musterFiles = regexp.MustCompile(`/etc/muster/[^"]+`)
 
-// jsonBlocks returns the body of every fenced code block opened with
-// ```json.
 func jsonBlocks(doc string) []string {
 	var blocks []string
 	var b strings.Builder
