@@ -1,0 +1,201 @@
+package daemon_test
+
+import (
+	"fmt"
+	"net"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/liquidmetal-dev/muster/internal/daemon"
+	"github.com/liquidmetal-dev/muster/internal/vmsource/battery/fakepoolmgr"
+)
+
+func TestReadyAfterStartup(t *testing.T) {
+	f := newFakes(t)
+	r := f.start(t, startOptions{})
+	r.waitReady()
+	if code, _, err := get(r.opsURL + "/healthz"); err != nil || code != http.StatusOK {
+		t.Fatalf("GET /healthz = %d, %v, want 200", code, err)
+	}
+	if n := f.Pool.CallCount("CreatePool"); n != 1 {
+		t.Fatalf("CreatePool calls = %d, want 1", n)
+	}
+	if n := f.Pool.CallCount("ListLeases"); n < 1 {
+		t.Fatalf("ListLeases calls = %d, want at least 1", n)
+	}
+}
+
+func TestQueuedDeliveryReachesDemand(t *testing.T) {
+	f := newFakes(t)
+	r := f.start(t, startOptions{})
+	r.waitReady()
+	f.GitHub.SetWebhook(r.webhookURL+"/webhook", webhookSecret)
+	if _, err := f.GitHub.QueueJob(repoA, labels); err != nil {
+		t.Fatalf("QueueJob: %v", err)
+	}
+	ds := f.GitHub.Deliveries()
+	if len(ds) == 0 {
+		t.Fatal("no delivery was sent")
+	}
+	if d := ds[len(ds)-1]; d.Action != "queued" || d.Err != nil || d.Status < 200 || d.Status > 299 {
+		t.Fatalf("delivery = action %q status %d err %v, want a 2xx queued delivery", d.Action, d.Status, d.Err)
+	}
+	waitFor(t, 10*time.Second, func() bool { return f.Pool.CallCount("ClaimVM") >= 1 },
+		func() string { return "no ClaimVM after the queued delivery; logs:\n" + r.logs.String() })
+}
+
+func TestPolledJobReachesDemand(t *testing.T) {
+	f := newFakes(t)
+	if _, err := f.GitHub.QueueJob(repoA, labels); err != nil {
+		t.Fatalf("QueueJob: %v", err)
+	}
+	r := f.start(t, startOptions{mutate: func(m map[string]any) {
+		delete(m, "listen")
+		delete(m["github"].(map[string]any), "webhook_secret_env")
+		set(m, "github.poll", map[string]any{"enabled": true, "interval": "10s", "repos": []any{repoA}})
+	}})
+	waitFor(t, 10*time.Second, func() bool { return f.Pool.CallCount("ClaimVM") >= 1 },
+		func() string { return "no ClaimVM after the poll; logs:\n" + r.logs.String() })
+}
+
+func TestSignalShutsDownCleanly(t *testing.T) {
+	f := newFakes(t)
+	r := f.start(t, startOptions{})
+	r.waitReady()
+	r.signal()
+	if err := r.mustReturn(5 * time.Second); err != nil {
+		t.Fatalf("Run = %v, want nil", err)
+	}
+	for _, u := range []string{r.webhookURL, r.opsURL} {
+		addr := strings.TrimPrefix(u, "http://")
+		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
+			_ = c.Close()
+			t.Errorf("dial %s after shutdown succeeded, want refused", addr)
+		}
+	}
+}
+
+func TestReadyz503DuringStartup(t *testing.T) {
+	f := newFakes(t)
+	f.Pool.Stall("ListLeases", 3*time.Second)
+	r := f.start(t, startOptions{})
+	waitFor(t, 5*time.Second, func() bool { return f.Pool.CallCount("ListLeases") >= 1 },
+		func() string { return "session reconciliation did not start; logs:\n" + r.logs.String() })
+	code, body, err := get(r.opsURL + "/readyz")
+	if err != nil || code != http.StatusServiceUnavailable || !strings.Contains(body, `{"name":"started","ok":false`) {
+		t.Fatalf("GET /readyz = %d %q %v, want 503 with started not ok", code, body, err)
+	}
+	if code, _, err := get(r.opsURL + "/healthz"); err != nil || code != http.StatusOK {
+		t.Fatalf("GET /healthz = %d, %v, want 200", code, err)
+	}
+}
+
+func TestSignalDuringStartupReturnsNil(t *testing.T) {
+	f := newFakes(t)
+	f.Pool.Stall("ListLeases", 30*time.Second)
+	r := f.start(t, startOptions{})
+	waitFor(t, 5*time.Second, func() bool { return f.Pool.CallCount("ListLeases") >= 1 },
+		func() string { return "session reconciliation did not start; logs:\n" + r.logs.String() })
+	r.signal()
+	if err := r.mustReturn(5 * time.Second); err != nil {
+		t.Fatalf("Run = %v, want nil", err)
+	}
+}
+
+func TestGitHubAuthFailureFailsStartup(t *testing.T) {
+	f := newFakes(t)
+	r := f.start(t, startOptions{options: func(o *daemon.Options) {
+		o.Config.GitHub.Token = configSecret("ghp_unknown")
+	}})
+	err := r.mustReturn(10 * time.Second)
+	if err == nil || !strings.Contains(err.Error(), "startup: config check: github: ") {
+		t.Fatalf("Run = %v, want a startup config check error naming github", err)
+	}
+}
+
+func TestWebhookListenFailsStartup(t *testing.T) {
+	f := newFakes(t)
+	held := listen(t)
+	t.Cleanup(func() { _ = held.Close() })
+	addr := held.Addr().String()
+	r := f.start(t, startOptions{noListen: true, mutate: func(m map[string]any) {
+		set(m, "listen.addr", addr)
+	}})
+	sawReady := make(chan bool, 1)
+	go func() {
+		ready := false
+		for range 100 {
+			if code, _, err := get(r.opsURL + "/readyz"); err == nil && code == http.StatusOK {
+				ready = true
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		sawReady <- ready
+	}()
+	err := r.mustReturn(10 * time.Second)
+	if err == nil || !strings.Contains(err.Error(), "startup: webhook listener") || !strings.Contains(err.Error(), addr) {
+		t.Fatalf("Run = %v, want a startup webhook listener error naming %s", err, addr)
+	}
+	if <-sawReady {
+		t.Fatal("/readyz returned 200 before the webhook listener failed")
+	}
+}
+
+func TestRuntimeServeErrorExitsWithError(t *testing.T) {
+	f := newFakes(t)
+	trip := &tripListener{Listener: listen(t), tripped: make(chan struct{})}
+	t.Cleanup(trip.trip)
+	r := f.start(t, startOptions{noListen: true, options: func(o *daemon.Options) {
+		o.WebhookListener = trip
+	}})
+	r.waitReady()
+	trip.trip()
+	err := r.mustReturn(5 * time.Second)
+	if err == nil || !strings.Contains(err.Error(), "webhook listener") {
+		t.Fatalf("Run = %v, want a webhook listener error", err)
+	}
+}
+
+func TestPrunePoolsDeletesOrphans(t *testing.T) {
+	for _, prune := range []bool{false, true} {
+		t.Run(fmt.Sprintf("prune=%v", prune), func(t *testing.T) {
+			f := newFakes(t)
+			f.Pool.AddPool(fakepoolmgr.Pool{Name: "orphan", Namespace: testNS})
+			r := f.start(t, startOptions{options: func(o *daemon.Options) { o.PrunePools = prune }})
+			r.waitReady()
+			want := 0
+			if prune {
+				want = 1
+			}
+			if n := f.Pool.CallCount("DeletePool"); n != want {
+				t.Fatalf("DeletePool calls = %d, want %d", n, want)
+			}
+		})
+	}
+}
+
+func TestAPIConfiguredWarns(t *testing.T) {
+	f := newFakes(t)
+	r := f.start(t, startOptions{mutate: func(m map[string]any) {
+		m["api"] = map[string]any{"addr": "127.0.0.1:9443", "tls": map[string]any{"insecure": true}}
+	}})
+	r.waitReady()
+	if logs := r.logs.String(); !strings.Contains(logs, "level=WARN") || !strings.Contains(logs, "gRPC API is not implemented yet") {
+		t.Fatalf("logs have no WARN about the gRPC API:\n%s", logs)
+	}
+}
+
+func TestNoListenStartsNoWebhookListener(t *testing.T) {
+	f := newFakes(t)
+	r := f.start(t, startOptions{mutate: func(m map[string]any) {
+		delete(m, "listen")
+		delete(m["github"].(map[string]any), "webhook_secret_env")
+		set(m, "github.poll", map[string]any{"enabled": true, "interval": "10s", "repos": []any{repoA}})
+	}})
+	r.waitReady()
+	if r.webhookURL != "" {
+		t.Fatalf("webhookURL = %q, want none", r.webhookURL)
+	}
+}
