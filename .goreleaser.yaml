@@ -132,10 +132,7 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
-      - "^chore:"
+      - '^(docs|test|ci|chore)(\([^)]*\))?!?:'
       - "Merge pull request"
   groups:
     - title: Features
