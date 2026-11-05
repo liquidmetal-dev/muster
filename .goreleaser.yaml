@@ -90,7 +90,7 @@ nfpms:
       - musterd
     package_name: musterd
     # GitHub renames "~" to "." on upload, which would break checksums.txt.
-    file_name_template: '{{ replace .ConventionalFileName "~" "." }}'
+    file_name_template: &pkgname '{{ replace .ConventionalFileName "~" "." }}'
     formats: &formats
       - deb
       - rpm
@@ -119,7 +119,7 @@ nfpms:
     ids:
       - musterctl
     package_name: musterctl
-    file_name_template: '{{ replace .ConventionalFileName "~" "." }}'
+    file_name_template: *pkgname
     formats: *formats
     vendor: liquidmetal-dev
     maintainer: *maintainer

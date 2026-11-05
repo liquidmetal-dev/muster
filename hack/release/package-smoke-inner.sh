@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Runs as root inside the container that package-smoke.sh starts.
-# Usage: package-smoke-inner.sh <version>
+# Usage: package-smoke-inner.sh <version>   (as root, in a throwaway container)
 set -euo pipefail
 
 version="${1:?usage: package-smoke-inner.sh <version>}"
@@ -10,7 +9,6 @@ fail() {
 	exit 1
 }
 
-# one <glob>: prints the single file that matches the glob.
 one() {
 	local matches
 	# shellcheck disable=SC2206

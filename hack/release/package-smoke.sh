@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Installs the snapshot packages from a goreleaser dist directory in a
-# container and checks the layout. Usage: package-smoke.sh <image> <dist-dir>
+# Usage: package-smoke.sh <image> <dist-dir>
 set -euo pipefail
 
 image="${1:?usage: package-smoke.sh <image> <dist-dir>}"
