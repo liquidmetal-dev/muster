@@ -26,6 +26,8 @@ const (
 	DefaultMaxSessionDuration = 6 * time.Hour
 	DefaultWorkFolder         = "_work"
 	DefaultShutdownGrace      = 30 * time.Second
+	DefaultLogFormat          = LogFormatJSON
+	DefaultLogLevel           = LogLevelInfo
 
 	DefaultHeartbeatInterval        = 30 * time.Second
 	DefaultHeartbeatExpiryThreshold = 90 * time.Second
@@ -105,6 +107,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.MetricsAddr == "" {
 		cfg.MetricsAddr = DefaultMetricsAddr
+	}
+	if cfg.Log.Format == "" {
+		cfg.Log.Format = DefaultLogFormat
+	}
+	if cfg.Log.Level == "" {
+		cfg.Log.Level = DefaultLogLevel
 	}
 	if cfg.GitHub.APIBaseURL == "" {
 		cfg.GitHub.APIBaseURL = DefaultAPIBaseURL

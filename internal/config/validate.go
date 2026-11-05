@@ -33,6 +33,7 @@ func validate(cfg *Config, errs *errorList) {
 	validateListen(cfg, errs)
 	validateAPI(cfg, errs)
 	validateAddr("metrics_addr", cfg.MetricsAddr, errs)
+	validateLog(cfg.Log, errs)
 	validateGitHub(cfg, errs)
 	validateBattery(cfg, errs)
 	validateFlintlock(cfg, errs)
@@ -178,6 +179,19 @@ func validateDefaults(cfg *Config, errs *errorList) {
 
 // validateAddr requires host:port with a numeric port in 1..65535.
 // net.SplitHostPort alone accepts ":" with an empty port.
+func validateLog(l Log, errs *errorList) {
+	switch l.Format {
+	case LogFormatJSON, LogFormatText:
+	default:
+		errs.add("log.format", "must be one of %s, %s", LogFormatJSON, LogFormatText)
+	}
+	switch l.Level {
+	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
+	default:
+		errs.add("log.level", "must be one of %s, %s, %s, %s", LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError)
+	}
+}
+
 func validateAddr(path, addr string, errs *errorList) {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {

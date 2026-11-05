@@ -229,3 +229,31 @@ func TestParsePoolDefaults(t *testing.T) {
 		t.Errorf("pools[1].work_folder = %q, want w", got)
 	}
 }
+
+func TestParseDefaultsLog(t *testing.T) {
+	cfg, err := parseMutated(t, nil)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	want := config.Log{Format: config.LogFormatJSON, Level: config.DefaultLogLevel}
+	if cfg.Log != want {
+		t.Fatalf("Log = %+v, want %+v", cfg.Log, want)
+	}
+}
+
+func TestParseRejectsBadLog(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		log  map[string]any
+		want string
+	}{
+		{"format", map[string]any{"format": "xml"}, "log.format: must be one of json, text"},
+		{"format case", map[string]any{"format": "TEXT"}, "log.format: must be one of json, text"},
+		{"level", map[string]any{"level": "trace"}, "log.level: must be one of debug, info, warn, error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseMutated(t, func(m map[string]any) { m["log"] = tc.log })
+			wantErr(t, err, tc.want)
+		})
+	}
+}
