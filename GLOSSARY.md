@@ -30,6 +30,11 @@ An observation that a session's runner is finished: exec exit, job completed plu
 runner absent from GitHub, idle timeout, or maximum session duration. The first end signal
 ends the session.
 
+**Finished session**:
+A session that has reached ENDED, after an end signal, or FAILED, for a failure reason. Its
+outcome is that state and its reason says why.
+_Avoid_: Done, completed, ended (for a failed session)
+
 **Adopted session**:
 A session muster finds in flight at startup and resumes in RUNNING without an exec stream.
 
@@ -88,6 +93,11 @@ A runner named for muster's namespace, one of its pools and a session id, that i
 runner named for any lease's pool and session id. A pool is muster's when it is configured or
 when one of muster's leases names it.
 Session reconciliation deletes it.
+
+**Ready**:
+musterd has completed startup, and its latest battery and GitHub probes succeeded. A
+musterd that is alive is not necessarily ready.
+_Avoid_: Healthy, up
 
 **Shutdown grace**:
 How long muster waits after SIGTERM for busy sessions to finish before it exits. Sessions

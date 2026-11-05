@@ -33,6 +33,7 @@ func validate(cfg *Config, errs *errorList) {
 	validateListen(cfg, errs)
 	validateAPI(cfg, errs)
 	validateAddr("metrics_addr", cfg.MetricsAddr, errs)
+	validateLog(cfg.Log, errs)
 	validateGitHub(cfg, errs)
 	validateBattery(cfg, errs)
 	validateFlintlock(cfg, errs)
@@ -173,6 +174,19 @@ func validateDefaults(cfg *Config, errs *errorList) {
 	hb := cfg.Defaults
 	if hb.HeartbeatInterval > 0 && hb.HeartbeatExpiryThreshold > 0 && hb.HeartbeatExpiryThreshold <= hb.HeartbeatInterval {
 		errs.add("defaults.heartbeat_expiry_threshold", "must be greater than defaults.heartbeat_interval")
+	}
+}
+
+func validateLog(l Log, errs *errorList) {
+	switch l.Format {
+	case LogFormatJSON, LogFormatText:
+	default:
+		errs.add("log.format", "must be one of %s, %s", LogFormatJSON, LogFormatText)
+	}
+	switch l.Level {
+	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
+	default:
+		errs.add("log.level", "must be one of %s, %s, %s, %s", LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError)
 	}
 }
 

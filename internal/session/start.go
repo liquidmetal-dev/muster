@@ -87,6 +87,7 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 			return nil, mailbox{}, ReasonMaxDuration
 		case <-s.notify:
 			if s.lostPending() {
+				s.logger().Warn("VM lost")
 				abandon()
 				return nil, mailbox{}, ReasonVMLost
 			}
@@ -133,7 +134,7 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 				run.broken = true
 				continue
 			}
-			s.log.Warn("runner exited before it came online", "exit_code", res.code, "err", res.err)
+			s.logger().Warn("runner exited before it came online", "exit_code", res.code, "err", res.err)
 			run.close()
 			return nil, mailbox{}, ReasonExecError
 		case <-s.notify:
@@ -154,7 +155,8 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 				s.state = Running
 				s.busy = s.busy || carry.busy
 				r.mu.Unlock()
-				s.log.Info("runner online", "busy", carry.busy)
+				s.logger().Info("runner online", "busy", carry.busy)
+				r.cfg.Metrics.ObserveOnline(s.pool.cfg.Name, r.clock.Now().Sub(s.createdAt))
 				carry.absent = m.absent
 				return run, carry, ""
 			}
@@ -167,7 +169,7 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 func (r *Registry) launch(ctx context.Context, s *session) (*execRun, Reason) {
 	groupID, err := r.runnerGroupID(ctx, s.pool)
 	if err != nil {
-		s.log.Warn("resolve runner group", "err", err)
+		s.logger().Warn("resolve runner group", "err", err)
 		return nil, ReasonJITError
 	}
 	jit, err := r.cfg.GitHub.GenerateJITConfig(ctx, s.pool.scope, github.JITRequest{
@@ -177,7 +179,7 @@ func (r *Registry) launch(ctx context.Context, s *session) (*execRun, Reason) {
 		WorkFolder:    s.pool.cfg.WorkFolder,
 	})
 	if err != nil {
-		s.log.Warn("generate JIT config", "err", err)
+		s.logger().Warn("generate JIT config", "err", err)
 		return nil, ReasonJITError
 	}
 	s.runnerID = jit.RunnerID
@@ -186,7 +188,7 @@ func (r *Registry) launch(ctx context.Context, s *session) (*execRun, Reason) {
 
 	es, err := s.vm.Exec(ctx, vmsource.ExecSpec{Cmd: runnerCommand, User: runnerUser, HasStdin: true})
 	if err != nil {
-		s.log.Warn("start runner", "err", err)
+		s.logger().Warn("start runner", "err", err)
 		return nil, ReasonExecError
 	}
 	r.forwardOutput(ctx, s, es)
@@ -195,7 +197,7 @@ func (r *Registry) launch(ctx context.Context, s *session) (*execRun, Reason) {
 	cerr := es.Stdin().Close()
 	if err := errors.Join(werr, cerr); err != nil {
 		_ = es.Close()
-		s.log.Warn("send runner config", "err", err)
+		s.logger().Warn("send runner config", "err", err)
 		return nil, ReasonExecError
 	}
 	done := make(chan execResult, 1)
@@ -237,22 +239,22 @@ func (r *Registry) heartbeat(ctx context.Context, s *session) {
 		}
 		if err := s.vm.KeepAlive(ctx); err != nil {
 			if errors.Is(err, vmsource.ErrLeaseNotFound) {
-				s.log.Warn("lease is gone")
+				s.logger().Warn("lease is gone")
 				s.post(mailbox{lost: true})
 				return
 			}
 			if ctx.Err() != nil {
 				return
 			}
-			s.log.Warn("heartbeat", "err", err)
+			s.logger().Warn("heartbeat", "err", err)
 		}
 		t.Reset(interval)
 	}
 }
 
-// JobStarted records that GitHub reported a job in progress on the named
-// runner. Unknown names are ignored.
-func (r *Registry) JobStarted(runnerName string) {
+// JobStarted records that GitHub reported job jobID in progress on the
+// named runner. Unknown names are ignored.
+func (r *Registry) JobStarted(runnerName string, jobID int64) {
 	r.mu.Lock()
 	s := r.byRunnerLocked(runnerName)
 	if s != nil {
@@ -260,7 +262,7 @@ func (r *Registry) JobStarted(runnerName string) {
 	}
 	r.mu.Unlock()
 	if s != nil {
-		s.post(mailbox{busy: true})
+		s.post(mailbox{busy: true, jobID: jobID})
 	}
 }
 

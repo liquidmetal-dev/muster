@@ -102,7 +102,7 @@ func TestShutdownNoBusy(t *testing.T) {
 func TestShutdownWaitsForBusy(t *testing.T) {
 	e := newEnv(t)
 	name := e.adopted()
-	e.Registry.JobStarted(name)
+	e.Registry.JobStarted(name, 1)
 	rec := &stopRecord{e: e, runner: name}
 	done := e.shutdownAsync(e.dispatcher(), rec, time.Minute)
 	select {
@@ -123,7 +123,7 @@ func TestShutdownWaitsForBusy(t *testing.T) {
 func TestShutdownGraceExpires(t *testing.T) {
 	e := newEnv(t)
 	name := e.adopted()
-	e.Registry.JobStarted(name)
+	e.Registry.JobStarted(name, 1)
 	rec := &stopRecord{e: e, runner: name}
 	start := e.Clock.Now()
 	if e.driveShutdown(e.shutdownAsync(e.dispatcher(), rec, time.Minute)) {

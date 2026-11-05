@@ -135,7 +135,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		if r.ours(k.name, pools) {
 			keys = append(keys, k)
 		} else {
-			r.log.Debug("reconcile: runner left alone", "runner", k.name)
+			r.log.Debug("reconcile: runner left alone", "runner_name", k.name)
 		}
 	}
 	slices.SortFunc(keys, func(a, b runnerKey) int { return cmp.Compare(a.name, b.name) })
@@ -224,7 +224,7 @@ func (r *reconciler) lease(ctx context.Context, l vmsource.LeaseInfo, runners ma
 	// The lease vanished after it was listed. Adopt may have failed to
 	// release the replacement VM it claimed, so look for it.
 	if again, err := r.cfg.Source.Leases(ctx); err != nil {
-		r.log.Warn("list leases after adopt mismatch", "session", l.RequestID, "err", err)
+		r.log.Warn("list leases after adopt mismatch", append(leaseAttrs(l, run.Name), "err", err)...)
 	} else {
 		for _, l2 := range again {
 			if l2.Pool == l.Pool && l2.RequestID == l.RequestID {
@@ -260,15 +260,15 @@ func (r *reconciler) releaseLease(ctx context.Context, l vmsource.LeaseInfo) {
 }
 
 func (r *reconciler) deleteRunner(ctx context.Context, s github.Scope, run github.Runner) {
-	_ = r.attempt(ctx, ActionDeleteRunner, []any{"runner", run.Name, "runner_id", run.ID}, func(ctx context.Context) error {
+	_ = r.attempt(ctx, ActionDeleteRunner, []any{"runner_name", run.Name, "runner_id", run.ID}, func(ctx context.Context) error {
 		return r.cfg.GitHub.DeleteRunner(ctx, s, run.ID)
 	})
 }
 
 func leaseAttrs(l vmsource.LeaseInfo, runner string) []any {
-	attrs := []any{"session", l.RequestID, "pool", l.Pool, "vm", l.VMID}
+	attrs := []any{"session_id", l.RequestID, "pool", l.Pool, "vm_id", l.VMID}
 	if runner != "" {
-		attrs = append(attrs, "runner", runner)
+		attrs = append(attrs, "runner_name", runner)
 	}
 	return attrs
 }

@@ -90,6 +90,10 @@ func withPools(p ...config.Pool) envOption { return func(o *envOptions) { o.pool
 
 func withConfig(f func(*session.Config)) envOption { return func(o *envOptions) { o.mutate = f } }
 
+func withMetrics(m session.Metrics) envOption {
+	return withConfig(func(c *session.Config) { c.Metrics = m })
+}
+
 type env struct {
 	t        *testing.T
 	Clock    *clock.Manual

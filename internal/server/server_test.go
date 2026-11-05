@@ -67,9 +67,18 @@ func do(t *testing.T, c *http.Client, method, url string) (int, string) {
 	return resp.StatusCode, string(b)
 }
 
-func TestNewRequiresWebhook(t *testing.T) {
-	if _, err := server.New(server.Config{}); err == nil {
-		t.Fatal("New without Webhook: got nil error")
+func TestNewWithoutWebhook(t *testing.T) {
+	s, err := server.New(server.Config{})
+	if err != nil {
+		t.Fatalf("New without Webhook: %v", err)
+	}
+	s.Handle("GET /other", stub)
+	addr := serve(t, s)
+	if code, _ := do(t, http.DefaultClient, http.MethodPost, "http://"+addr+"/webhook"); code != http.StatusNotFound {
+		t.Fatalf("POST /webhook = %d, want 404", code)
+	}
+	if code, body := do(t, http.DefaultClient, http.MethodGet, "http://"+addr+"/other"); code != http.StatusOK || body != "ok" {
+		t.Fatalf("GET /other = %d %q, want 200 ok", code, body)
 	}
 }
 

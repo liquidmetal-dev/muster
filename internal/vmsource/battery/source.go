@@ -136,7 +136,7 @@ func (s *Source) Release(ctx context.Context, v vmsource.VM) error {
 		return nil
 	}
 	if isNotFound(err) {
-		s.cfg.Logger.Debug("battery: lease already gone on release", "lease", bv.leaseID, "vm", bv.id)
+		s.cfg.Logger.Debug("battery: lease already gone on release", "lease_id", bv.leaseID, "vm_id", bv.id)
 		return nil
 	}
 	return mapError("ReleaseVM", nil, err)

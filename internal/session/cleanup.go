@@ -16,12 +16,15 @@ const (
 // cleanup releases the VM, then deletes the runner. Each step is retried
 // until it succeeds or ctx ends; it reports false when ctx ended first,
 // and leaves the rest to startup reconciliation.
-func (r *Registry) cleanup(ctx context.Context, s *session) bool {
+func (r *Registry) cleanup(ctx context.Context, s *session, outcome State, reason Reason) bool {
 	if s.vm != nil {
 		ok := r.retry(ctx, s, "release VM", func() error {
 			err := r.cfg.Source.Release(ctx, s.vm)
 			if errors.Is(err, vmsource.ErrLeaseNotFound) {
-				return nil
+				err = nil
+			}
+			if ctx.Err() == nil {
+				r.cfg.Metrics.ObserveRelease(s.pool.cfg.Name, outcome, reason, err == nil)
 			}
 			return err
 		})
@@ -47,7 +50,7 @@ func (r *Registry) retry(ctx context.Context, s *session, what string, f func() 
 		if ctx.Err() != nil {
 			return false
 		}
-		s.log.Warn(what, "err", err)
+		s.logger().Warn(what, "err", err)
 		if !r.sleep(ctx, bo.next()) {
 			return false
 		}

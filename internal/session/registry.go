@@ -64,6 +64,8 @@ type Config struct {
 	Clock clock.Clock
 	// Logger is nil for slog.Default().
 	Logger *slog.Logger
+	// Metrics is nil for NopMetrics{}.
+	Metrics Metrics
 	// OnEnd, when set, is called once per session after cleanup and
 	// before the session leaves the registry. Info.State is the outcome,
 	// Ended or Failed, never Released.
@@ -122,6 +124,9 @@ func New(cfg Config) (*Registry, error) {
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
+	}
+	if cfg.Metrics == nil {
+		cfg.Metrics = NopMetrics{}
 	}
 	r := &Registry{
 		cfg:      cfg,
@@ -191,6 +196,7 @@ func (r *Registry) Create(_ context.Context, poolName string) error {
 		return err
 	}
 	s := newSession(id, p, runnerName(r.cfg.Namespace, p.cfg.Name, id))
+	s.createdAt = r.clock.Now()
 	r.sessions[id] = s
 	r.wg.Add(1)
 	go r.runSession(r.runCtx, s)

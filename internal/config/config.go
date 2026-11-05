@@ -17,6 +17,8 @@ type Config struct {
 	API *API `json:"api,omitempty"`
 	// MetricsAddr serves Prometheus metrics. Defaults to ":9090".
 	MetricsAddr string `json:"metrics_addr,omitempty"`
+	// Log sets the log format and level.
+	Log Log `json:"log,omitzero"`
 	// ShutdownGrace is how long musterd waits on SIGTERM for busy
 	// sessions to end. Defaults to 30s.
 	ShutdownGrace Duration  `json:"shutdown_grace,omitempty"`
@@ -26,6 +28,25 @@ type Config struct {
 	Defaults      Defaults  `json:"defaults"`
 	Pools         []Pool    `json:"pools"`
 }
+
+// Log sets how musterd writes its logs.
+type Log struct {
+	// Format is "json" (the default) or "text".
+	Format string `json:"format,omitempty"`
+	// Level is "debug", "info" (the default), "warn" or "error".
+	Level string `json:"level,omitempty"`
+}
+
+// Log formats and levels.
+const (
+	LogFormatJSON = "json"
+	LogFormatText = "text"
+
+	LogLevelDebug = "debug"
+	LogLevelInfo  = "info"
+	LogLevelWarn  = "warn"
+	LogLevelError = "error"
+)
 
 // Listen is the webhook listener.
 type Listen struct {

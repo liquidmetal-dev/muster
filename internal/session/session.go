@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/liquidmetal-dev/muster/internal/vmsource"
@@ -15,7 +16,11 @@ type session struct {
 	id     string
 	pool   *pool
 	runner string
-	log    *slog.Logger
+	// log is read by the heartbeat, runner output and launch goroutines
+	// while the session goroutine replaces it.
+	log atomic.Pointer[slog.Logger]
+	// baseLog is log without job_id. Only the session goroutine uses it.
+	baseLog *slog.Logger
 
 	// registry mu
 	state     State
@@ -26,10 +31,13 @@ type session struct {
 
 	vm       vmsource.VM
 	runnerID int64
+	// createdAt is zero for an adopted session.
+	createdAt time.Time
 	// seen is set once GitHub has listed the runner.
 	seen bool
 	// adopted sessions start in RUNNING with no exec stream.
 	adopted bool
+	jobID   int64
 
 	mbmu   sync.Mutex
 	mb     mailbox
@@ -47,6 +55,8 @@ type mailbox struct {
 	absent    bool
 	completed bool
 	lost      bool
+	expiring  bool
+	jobID     int64
 }
 
 func newSession(id string, p *pool, runner string) *session {
@@ -60,13 +70,34 @@ func newSession(id string, p *pool, runner string) *session {
 }
 
 // observe records that a poll listed the runner; only then can a later
-// absence end the session.
+// absence end the session. It runs on the session goroutine, so the VM
+// events are logged through the session's logger.
 func (s *session) observe(m mailbox) {
 	s.seen = s.seen || m.listed || m.online
+	if m.jobID != 0 && m.jobID != s.jobID {
+		s.jobID = m.jobID
+		s.setLogger(s.baseLog)
+	}
+	if m.lost {
+		s.logger().Warn("VM lost")
+	} else if m.expiring {
+		s.logger().Warn("VM lease expiring")
+	}
+}
+
+func (s *session) logger() *slog.Logger { return s.log.Load() }
+
+// setLogger sets the session's logger to base with the current job id.
+func (s *session) setLogger(base *slog.Logger) {
+	s.baseLog = base
+	if s.jobID != 0 {
+		base = base.With("job_id", s.jobID)
+	}
+	s.log.Store(base)
 }
 
 func (s *session) logBrokenStream(err error) {
-	s.log.Warn("exec stream broke; watching the runner through GitHub", "err", err)
+	s.logger().Warn("exec stream broke; watching the runner through GitHub", "err", err)
 }
 
 func (s *session) infoLocked() Info {
@@ -90,6 +121,10 @@ func (s *session) post(m mailbox) {
 	s.mb.busy = s.mb.busy || m.busy
 	s.mb.completed = s.mb.completed || m.completed
 	s.mb.lost = s.mb.lost || m.lost
+	s.mb.expiring = s.mb.expiring || m.expiring
+	if m.jobID != 0 {
+		s.mb.jobID = m.jobID
+	}
 	if m.polled {
 		s.mb.absent = m.absent
 	}
@@ -120,9 +155,9 @@ func (s *session) drain() mailbox {
 
 func (r *Registry) runSession(ctx context.Context, s *session) {
 	defer r.wg.Done()
-	s.log = r.log.With("session", s.id, "pool", s.pool.cfg.Name, "runner", s.runner)
+	s.setLogger(r.log.With("session_id", s.id, "pool", s.pool.cfg.Name, "runner_name", s.runner))
 	if s.adopted {
-		s.log = s.log.With("vm", s.vmID)
+		s.setLogger(s.baseLog.With("vm_id", s.vmID))
 	}
 	outcome, reason := r.drive(ctx, s)
 	if ctx.Err() != nil {
@@ -151,7 +186,7 @@ func (r *Registry) drive(ctx context.Context, s *session) (State, Reason) {
 	}()
 
 	if s.adopted {
-		s.log.Info("adopted session")
+		s.logger().Info("adopted session")
 		return r.running(ctx, s, nil, mailbox{})
 	}
 	run, carry, reason := r.start(ctx, s)
@@ -168,7 +203,12 @@ func (r *Registry) finish(ctx context.Context, s *session, outcome State, reason
 	r.mu.Lock()
 	s.state, s.reason = outcome, reason
 	r.mu.Unlock()
-	if !r.cleanup(ctx, s) {
+	var d time.Duration
+	if !s.adopted {
+		d = r.clock.Now().Sub(s.createdAt)
+	}
+	r.cfg.Metrics.ObserveFinished(s.pool.cfg.Name, outcome, reason, d, s.adopted)
+	if !r.cleanup(ctx, s, outcome, reason) {
 		return
 	}
 	r.mu.Lock()
@@ -178,9 +218,9 @@ func (r *Registry) finish(ctx context.Context, s *session, outcome State, reason
 	r.signalLocked()
 	r.mu.Unlock()
 	if outcome == Failed {
-		s.log.Warn("session failed", "reason", reason)
+		s.logger().Warn("session failed", "reason", reason)
 	} else {
-		s.log.Info("session ended", "reason", reason)
+		s.logger().Info("session ended", "reason", reason)
 	}
 	if r.cfg.OnEnd != nil {
 		r.cfg.OnEnd(info)
