@@ -19,6 +19,7 @@ and deletes the VM when the job ends. It is part of the
 - [Design](docs/design/2026-10-27-muster-design.md)
 - ADR: [stateless musterd](docs/adr/2026-10-27-stateless-musterd.md)
 - ADR: [battery as the VM source](docs/adr/2026-10-27-battery-as-vm-source.md)
+- ADR: [packaging and the systemd unit](docs/adr/2026-11-05-packaging-and-systemd-unit.md)
 
 ## Build and test
 
