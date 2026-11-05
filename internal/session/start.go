@@ -156,6 +156,7 @@ func (r *Registry) start(ctx context.Context, s *session) (*execRun, mailbox, Re
 				s.busy = s.busy || carry.busy
 				r.mu.Unlock()
 				s.logger().Info("runner online", "busy", carry.busy)
+				r.cfg.Metrics.ObserveOnline(s.pool.cfg.Name, r.clock.Now().Sub(s.createdAt))
 				carry.absent = m.absent
 				return run, carry, ""
 			}

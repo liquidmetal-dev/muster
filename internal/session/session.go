@@ -29,6 +29,8 @@ type session struct {
 
 	vm       vmsource.VM
 	runnerID int64
+	// createdAt is zero for an adopted session.
+	createdAt time.Time
 	// seen is set once GitHub has listed the runner.
 	seen bool
 	// adopted sessions start in RUNNING with no exec stream.
@@ -190,7 +192,12 @@ func (r *Registry) finish(ctx context.Context, s *session, outcome State, reason
 	r.mu.Lock()
 	s.state, s.reason = outcome, reason
 	r.mu.Unlock()
-	if !r.cleanup(ctx, s) {
+	var d time.Duration
+	if !s.adopted {
+		d = r.clock.Now().Sub(s.createdAt)
+	}
+	r.cfg.Metrics.ObserveFinished(s.pool.cfg.Name, outcome, reason, d, s.adopted)
+	if !r.cleanup(ctx, s, outcome, reason) {
 		return
 	}
 	r.mu.Lock()

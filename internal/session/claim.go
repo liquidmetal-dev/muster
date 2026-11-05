@@ -21,8 +21,10 @@ func (r *Registry) claim(ctx context.Context, s *session) (Reason, bool) {
 	deadline := r.clock.NewTimer(r.cfg.Defaults.ClaimDeadline.Duration())
 	defer deadline.Stop()
 	bo := newBackoff(claimBackoffBase, claimBackoffLimit, nil)
+	began := r.clock.Now()
 	for {
 		vm, err := r.cfg.Source.Acquire(ctx, s.pool.cfg.Name, s.id)
+		r.cfg.Metrics.ObserveClaimAttempt(s.pool.cfg.Name, errors.Is(err, vmsource.ErrExhausted))
 		if err == nil {
 			s.vm = vm
 			r.mu.Lock()
@@ -35,6 +37,7 @@ func (r *Registry) claim(ctx context.Context, s *session) (Reason, bool) {
 				return ReasonClaimDeadline, false
 			default:
 			}
+			r.cfg.Metrics.ObserveClaim(s.pool.cfg.Name, r.clock.Now().Sub(began))
 			return "", true
 		}
 		if ctx.Err() != nil {
