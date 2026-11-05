@@ -18,7 +18,8 @@ edit fails at once and, with `Restart=on-failure`, keeps failing.
 1. Two packages. `musterd` holds the daemon, the unit, the user definition and
    `/etc/muster`. `musterctl` holds only the CLI, so it installs on any host or workstation.
 2. The `musterd` package creates `/etc/muster` (mode 0750, `root:muster`) and leaves it
-   empty. The example goes to `/usr/share/doc/muster/musterd.json.example`. The unit has
+   empty. The example goes to `/usr/share/muster/musterd.json.example`, not under
+   `/usr/share/doc`, which minimized Ubuntu images exclude from dpkg. The unit has
    `ConditionPathExists=/etc/muster/musterd.json`, and the package does not enable or start
    it.
 3. The `muster` user is static, defined in `/usr/lib/sysusers.d/muster.conf` and created by

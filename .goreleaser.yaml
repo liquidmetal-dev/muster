@@ -108,7 +108,7 @@ nfpms:
       - src: deploy/systemd/muster.sysusers
         dst: /usr/lib/sysusers.d/muster.conf
       - src: docs/examples/musterd.json
-        dst: /usr/share/doc/muster/musterd.json.example
+        dst: /usr/share/muster/musterd.json.example
       - dst: /etc/muster
         type: dir
         file_info:
