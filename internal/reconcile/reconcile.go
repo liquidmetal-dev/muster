@@ -224,7 +224,7 @@ func (r *reconciler) lease(ctx context.Context, l vmsource.LeaseInfo, runners ma
 	// The lease vanished after it was listed. Adopt may have failed to
 	// release the replacement VM it claimed, so look for it.
 	if again, err := r.cfg.Source.Leases(ctx); err != nil {
-		r.log.Warn("list leases after adopt mismatch", "session_id", l.RequestID, "pool", l.Pool, "err", err)
+		r.log.Warn("list leases after adopt mismatch", append(leaseAttrs(l, run.Name), "err", err)...)
 	} else {
 		for _, l2 := range again {
 			if l2.Pool == l.Pool && l2.RequestID == l.RequestID {

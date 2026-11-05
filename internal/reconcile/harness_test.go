@@ -369,10 +369,23 @@ type vanishingSource struct {
 	pool      *fakepoolmgr.Server
 	requestID string
 
+	// leasesErr, when set, fails every Leases call after the first Acquire.
+	leasesErr error
+
 	mu          sync.Mutex
 	acquired    bool
 	replacement string
 	failed      bool
+}
+
+func (s *vanishingSource) Leases(ctx context.Context) ([]vmsource.LeaseInfo, error) {
+	s.mu.Lock()
+	acquired := s.acquired
+	s.mu.Unlock()
+	if acquired && s.leasesErr != nil {
+		return nil, s.leasesErr
+	}
+	return s.Source.Leases(ctx)
 }
 
 func (s *vanishingSource) Acquire(ctx context.Context, pool, requestID string) (vmsource.VM, error) {

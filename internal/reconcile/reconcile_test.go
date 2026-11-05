@@ -1,7 +1,11 @@
 package reconcile_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -307,4 +311,32 @@ func TestRunKeepsRunnerWithoutSessionID(t *testing.T) {
 	res, err := e.reconcile()
 	wantResult(t, res, reconcile.Result{}, err)
 	e.wantRunner(name, true)
+}
+
+func TestRunAdoptMismatchLogsSessionFields(t *testing.T) {
+	var src *vanishingSource
+	e := newEnv(t, withSource(func(s vmsource.Source) vmsource.Source {
+		src = &vanishingSource{Source: s, requestID: idA, leasesErr: errors.New("injected list failure")}
+		return src
+	}))
+	src.pool = e.Pool
+	name := e.prior(poolLinux, idA, holdIdle)
+	var buf bytes.Buffer
+	cfg := e.config()
+	cfg.Logger = slog.New(slog.NewJSONHandler(&buf, nil))
+	_, _ = e.reconcileDriven(cfg)
+	var rec map[string]any
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		if strings.Contains(line, "list leases after adopt mismatch") {
+			if err := json.Unmarshal([]byte(line), &rec); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if rec == nil {
+		t.Fatalf("no adopt mismatch line in:\n%s", buf.String())
+	}
+	if rec["session_id"] != idA || rec["runner_name"] != name || rec["vm_id"] == nil || rec["pool"] != poolLinux {
+		t.Fatalf("record = %v, want session_id, pool, runner_name and vm_id", rec)
+	}
 }
