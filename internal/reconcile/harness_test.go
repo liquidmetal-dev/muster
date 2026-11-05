@@ -348,17 +348,6 @@ func (e *env) drive(step time.Duration, cond func() bool) {
 	}
 }
 
-func waitFor(t *testing.T, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition not met within 10s")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
 // vanishingSource makes the lease of one request id vanish just before
 // its first Acquire, so Acquire claims a replacement VM, and fails the
 // first Release of that replacement.
