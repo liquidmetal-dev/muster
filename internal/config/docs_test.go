@@ -172,3 +172,61 @@ func tableRow(doc, path string) string {
 	}
 	return ""
 }
+
+const quickStartDoc = "../../docs/quick-start.md"
+
+// jsonBlocks returns the body of every fenced code block opened with
+// ```json.
+func jsonBlocks(doc string) []string {
+	var blocks []string
+	var b strings.Builder
+	in := false
+	for line := range strings.Lines(doc) {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case !in && trimmed == "```json":
+			in = true
+			b.Reset()
+		case in && trimmed == "```":
+			in = false
+			blocks = append(blocks, b.String())
+		case in:
+			b.WriteString(line)
+		}
+	}
+	return blocks
+}
+
+func TestQuickStartConfigsParse(t *testing.T) {
+	blocks := jsonBlocks(readDoc(t, quickStartDoc))
+	if len(blocks) != 2 {
+		t.Fatalf("%s has %d json blocks, want 2 (webhook and polling configs)", quickStartDoc, len(blocks))
+	}
+	cfgs := make([]*config.Config, len(blocks))
+	for i, block := range blocks {
+		cfg, err := config.Parse(strings.NewReader(block))
+		if err != nil {
+			t.Fatalf("json block %d: Parse() error = %v", i+1, err)
+		}
+		if len(cfg.Pools) != 1 {
+			t.Fatalf("json block %d: %d pools, want 1", i+1, len(cfg.Pools))
+		}
+		p := cfg.Pools[0]
+		if p.Scope.Repo == "" {
+			t.Errorf("json block %d: pool scope is not a repository", i+1)
+		}
+		if !slices.Equal(p.Labels, []string{"self-hosted", "muster"}) {
+			t.Errorf("json block %d: labels = %v, want [self-hosted muster]", i+1, p.Labels)
+		}
+		if p.Template.GetRootVolume().GetSizeInMb() <= 0 {
+			t.Errorf("json block %d: microvm_template.rootVolume.sizeInMb is not set", i+1)
+		}
+		cfgs[i] = cfg
+	}
+	if cfgs[0].Listen == nil {
+		t.Error("json block 1: listen is not set; the first config uses the webhook intake")
+	}
+	if cfgs[1].Listen != nil || !cfgs[1].GitHub.Poll.Enabled {
+		t.Error("json block 2: want listen unset and github.poll.enabled; the second config uses only the polling intake")
+	}
+}
