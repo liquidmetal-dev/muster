@@ -10,9 +10,7 @@ import (
 	"github.com/liquidmetal-dev/muster/internal/session"
 )
 
-func withCounters(m *session.Counters) envOption {
-	return withConfig(func(c *session.Config) { c.Metrics = m })
-}
+func withCounters(m *session.Counters) envOption { return withMetrics(m) }
 
 func TestMetricsClaimAndOnline(t *testing.T) {
 	m := &session.Counters{}
