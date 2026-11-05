@@ -158,3 +158,27 @@ func TestAdoptLeaseGoneBeforeAcquire(t *testing.T) {
 		t.Fatalf("leases = %d, want 0: the replacement VM must be released", n)
 	}
 }
+
+func TestRunningClosesWhenRunStarts(t *testing.T) {
+	e := newEnv(t)
+	select {
+	case <-e.Registry.Running():
+		t.Fatal("Running is closed before Run")
+	default:
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = e.Registry.Run(ctx)
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+	select {
+	case <-e.Registry.Running():
+	case <-time.After(5 * time.Second):
+		t.Fatal("Running did not close after Run started")
+	}
+	if err := e.Registry.Create(context.Background(), "\x00probe"); !errors.Is(err, session.ErrUnknownPool) {
+		t.Fatalf("Create after Running = %v, want ErrUnknownPool", err)
+	}
+}

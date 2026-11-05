@@ -3,7 +3,6 @@ package session_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -252,9 +251,7 @@ func (e *env) startCancelable() (stop func(d time.Duration) bool) {
 			return false
 		}
 	}
-	waitFor(e.t, func() bool {
-		return !errors.Is(e.Registry.Create(context.Background(), "\x00probe"), session.ErrNotRunning)
-	})
+	<-e.Registry.Running()
 	return stop
 }
 

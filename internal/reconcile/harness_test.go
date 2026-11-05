@@ -197,9 +197,7 @@ func (e *env) startRegistry() {
 		})
 	}
 	e.t.Cleanup(e.stop)
-	waitFor(e.t, func() bool {
-		return !errors.Is(e.Registry.Create(context.Background(), "\x00probe"), session.ErrNotRunning)
-	})
+	<-e.Registry.Running()
 }
 
 func (e *env) config() reconcile.Config {

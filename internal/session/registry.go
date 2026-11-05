@@ -101,6 +101,7 @@ type Registry struct {
 	sessions map[string]*session
 	groupIDs map[string]int64
 	runCtx   context.Context
+	started  chan struct{}
 	stopped  bool
 	changed  chan struct{}
 	wg       sync.WaitGroup
@@ -137,6 +138,7 @@ func New(cfg Config) (*Registry, error) {
 		sessions: map[string]*session{},
 		groupIDs: map[string]int64{},
 		changed:  make(chan struct{}),
+		started:  make(chan struct{}),
 	}
 	for _, p := range cfg.Pools {
 		scope, err := github.ScopeFromConfig(p.Scope)
@@ -160,6 +162,7 @@ func (r *Registry) Run(ctx context.Context) error {
 	r.runCtx = ctx
 	r.wg.Add(1 + len(r.pools))
 	r.mu.Unlock()
+	close(r.started)
 	for name := range r.pools {
 		go func() {
 			defer r.wg.Done()
@@ -178,6 +181,10 @@ func (r *Registry) Run(ctx context.Context) error {
 	r.wg.Wait()
 	return nil
 }
+
+// Running is closed once Run has started, so Adopt and Create no longer
+// return ErrNotRunning because Run has not been called.
+func (r *Registry) Running() <-chan struct{} { return r.started }
 
 // Create records a PENDING session for pool and starts it. It does not
 // wait for a VM.
