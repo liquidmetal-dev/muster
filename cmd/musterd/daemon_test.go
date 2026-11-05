@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -59,8 +61,9 @@ func freeAddr(t *testing.T) string {
 }
 
 // daemonConfig starts the fakes and writes a configuration for them. It
-// returns the path and the metrics address.
-func daemonConfig(t *testing.T, batteryAddr string) (path, metricsAddr string) {
+// returns the path, the metrics address and the fake battery, which is nil
+// when batteryAddr is set.
+func daemonConfig(t *testing.T, batteryAddr string) (path, metricsAddr string, pm *fakepoolmgr.Server) {
 	t.Helper()
 	ex := fakeexec.New()
 	ex.SetServerInfo("v1.0.0", true)
@@ -69,7 +72,7 @@ func daemonConfig(t *testing.T, batteryAddr string) (path, metricsAddr string) {
 	t.Cleanup(ex.Stop)
 
 	if batteryAddr == "" {
-		pm := fakepoolmgr.New()
+		pm = fakepoolmgr.New()
 		pmLis := tcpListener(t)
 		go func() { _ = pm.Serve(pmLis) }()
 		t.Cleanup(pm.Stop)
@@ -119,16 +122,15 @@ func daemonConfig(t *testing.T, batteryAddr string) (path, metricsAddr string) {
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return path, metricsAddr
+	return path, metricsAddr, pm
 }
 
-func TestRunServesUntilSIGTERM(t *testing.T) {
-	path, metricsAddr := daemonConfig(t, "")
-	var out bytes.Buffer
+// startRun runs musterd with args and waits until /readyz returns 200.
+func startRun(t *testing.T, args []string, metricsAddr string) (code <-chan int, stderr *lockedBuffer) {
+	t.Helper()
 	errb := &lockedBuffer{}
-	code := make(chan int, 1)
-	go func() { code <- run([]string{"-config", path}, &out, errb) }()
-
+	c := make(chan int, 1)
+	go func() { c <- run(args, io.Discard, errb) }()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		resp, err := http.Get("http://" + metricsAddr + "/readyz")
@@ -143,31 +145,57 @@ func TestRunServesUntilSIGTERM(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	return c, errb
+}
+
+// stopRun sends SIGTERM to the test process and returns run's exit code.
+func stopRun(t *testing.T, code <-chan int, errb *lockedBuffer) int {
+	t.Helper()
 	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case c := <-code:
-		if c != 0 {
-			t.Fatalf("exit code = %d, want 0; stderr:\n%s", c, errb)
-		}
+		return c
 	case <-time.After(5 * time.Second):
 		t.Fatalf("run did not return after SIGTERM; stderr:\n%s", errb)
+		return -1
+	}
+}
+
+func TestRunServesUntilSIGTERM(t *testing.T) {
+	path, metricsAddr, _ := daemonConfig(t, "")
+	code, errb := startRun(t, []string{"-config", path}, metricsAddr)
+	if c := stopRun(t, code, errb); c != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr:\n%s", c, errb)
 	}
 	if !strings.Contains(errb.String(), "configuration loaded") {
 		t.Fatalf("stderr = %q, want the configuration loaded log", errb)
 	}
 }
 
-func TestRunPrunePoolsFlagParses(t *testing.T) {
-	var out, errb bytes.Buffer
-	if code := run([]string{"-prune-pools", "-version"}, &out, &errb); code != 0 {
-		t.Fatalf("exit code = %d, want 0; stderr: %s", code, errb.String())
+func TestRunPrunePoolsFlag(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want int
+	}{{nil, 0}, {[]string{"-prune-pools"}, 1}} {
+		t.Run(fmt.Sprintf("%v", tc.args), func(t *testing.T) {
+			path, metricsAddr, pm := daemonConfig(t, "")
+			pm.AddPool(fakepoolmgr.Pool{Name: "orphan", Namespace: "muster"})
+			code, errb := startRun(t, append([]string{"-config", path}, tc.args...), metricsAddr)
+			n := pm.CallCount("DeletePool")
+			if c := stopRun(t, code, errb); c != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr:\n%s", c, errb)
+			}
+			if n != tc.want {
+				t.Fatalf("DeletePool calls = %d, want %d", n, tc.want)
+			}
+		})
 	}
 }
 
 func TestRunStartupFailureExits1(t *testing.T) {
-	path, _ := daemonConfig(t, freeAddr(t))
+	path, _, _ := daemonConfig(t, freeAddr(t))
 	var out bytes.Buffer
 	errb := &lockedBuffer{}
 	code := make(chan int, 1)
