@@ -61,6 +61,22 @@ The set of queued jobs that one repository returned during a poll pass, with the
 asked for it.
 _Avoid_: Snapshot, poll result
 
+## Pools
+
+**Pool**:
+A named set of warm VMs in battery, on named flintlock hosts, that muster keeps for the jobs
+of one pool scope whose labels the pool has.
+_Avoid_: Runner group, fleet
+
+**Pool scope**:
+The GitHub organization or repository whose jobs a pool serves and where its runners register.
+_Avoid_: Target, owner
+
+**Namespace**:
+The battery namespace that holds the pools and leases of one musterd instance. Two instances
+that share a battery use different namespaces.
+_Avoid_: Tenant, prefix
+
 ## Startup and shutdown
 
 **Pool reconciliation**:
