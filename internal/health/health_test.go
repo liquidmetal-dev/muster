@@ -72,13 +72,13 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 }
 
-// probedAt waits until every check except started has a result from time at.
+// probedAt waits until every probe has a result from time at.
 func probedAt(t *testing.T, r *health.Readiness, at time.Time) {
 	t.Helper()
 	waitFor(t, func() bool {
 		_, sts := r.Ready()
 		for _, s := range sts {
-			if s.Name != health.CheckStarted && !s.At.Equal(at) {
+			if s.Name != health.CheckStarted && s.Name != health.CheckStopping && !s.At.Equal(at) {
 				return false
 			}
 		}
@@ -124,7 +124,7 @@ func TestNotProbedYet(t *testing.T) {
 	if code != http.StatusServiceUnavailable || b.Ready {
 		t.Fatalf("readyz = %d %+v, want 503", code, b)
 	}
-	if b.Checks[1].Name != "battery" || b.Checks[1].Error != "not probed yet" {
+	if b.Checks[2].Name != "battery" || b.Checks[2].Error != "not probed yet" {
 		t.Fatalf("checks = %+v", b.Checks)
 	}
 }
@@ -157,7 +157,7 @@ func TestFlipsOnFirstFailureAndBack(t *testing.T) {
 	clk.Advance(health.DefaultInterval)
 	probedAt(t, r, t0.Add(health.DefaultInterval))
 	code, body := readyz(t, r)
-	if code != http.StatusServiceUnavailable || body.Checks[1].Error != "battery down" {
+	if code != http.StatusServiceUnavailable || body.Checks[2].Error != "battery down" {
 		t.Fatalf("after failure: %d %+v, want 503 with the error", code, body)
 	}
 	p.set(nil)
@@ -174,8 +174,8 @@ func TestProbeTimeoutCountsAsFailure(t *testing.T) {
 	r := run(t, health.Config{Clock: clk, Timeout: 50 * time.Millisecond, Probes: []health.Probe{{Name: "battery", Check: block}}})
 	probedAt(t, r, t0)
 	_, sts := r.Ready()
-	if sts[1].OK || !strings.Contains(sts[1].Err, "context deadline exceeded") {
-		t.Fatalf("status = %+v, want a deadline failure", sts[1])
+	if sts[2].OK || !strings.Contains(sts[2].Err, "context deadline exceeded") {
+		t.Fatalf("status = %+v, want a deadline failure", sts[2])
 	}
 }
 
@@ -196,5 +196,30 @@ func TestSetReadyCalledOnChange(t *testing.T) {
 	}
 	if got := m.get(health.CheckStarted); len(got) != 2 || got[0] || !got[1] {
 		t.Fatalf("started SetReady = %v, want [false true]", got)
+	}
+}
+
+func TestMarkStoppingMakesNotReady(t *testing.T) {
+	clk := clock.NewManual(t0)
+	p := &switchProbe{}
+	m := &recorder{}
+	r := run(t, health.Config{Clock: clk, Metrics: m, Probes: []health.Probe{{Name: "battery", Check: p.check}}})
+	probedAt(t, r, t0)
+	r.MarkStarted()
+	ready, sts := r.Ready()
+	if !ready || sts[1] != (health.Status{Name: health.CheckStopping, OK: true}) {
+		t.Fatalf("before MarkStopping: ready=%v statuses=%+v, want ready with stopping ok", ready, sts)
+	}
+	r.MarkStopping()
+	ready, sts = r.Ready()
+	if ready || sts[1] != (health.Status{Name: health.CheckStopping, Err: "shutdown has begun"}) {
+		t.Fatalf("after MarkStopping: ready=%v statuses=%+v, want not ready with stopping failed", ready, sts)
+	}
+	if code, _ := readyz(t, r); code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz = %d, want 503", code)
+	}
+	r.MarkStopping()
+	if got := m.get(health.CheckStopping); len(got) != 2 || !got[0] || got[1] {
+		t.Fatalf("stopping SetReady = %v, want [true false]", got)
 	}
 }

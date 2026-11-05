@@ -25,6 +25,9 @@ const (
 // complete.
 const CheckStarted = "started"
 
+// CheckStopping is the check that fails once musterd begins shutdown.
+const CheckStopping = "stopping"
+
 const notProbed = "not probed yet"
 
 // Probe is one readiness check, such as "battery" or "github".
@@ -67,6 +70,7 @@ type Readiness struct {
 
 	mu       sync.Mutex
 	started  bool
+	stopping bool
 	statuses []Status
 }
 
@@ -87,6 +91,7 @@ func New(cfg Config) *Readiness {
 	}
 	r := &Readiness{cfg: cfg, statuses: make([]Status, len(cfg.Probes))}
 	r.setReady(CheckStarted, false)
+	r.setReady(CheckStopping, true)
 	for i, p := range cfg.Probes {
 		r.statuses[i] = Status{Name: p.Name, Err: notProbed}
 		r.setReady(p.Name, false)
@@ -160,8 +165,20 @@ func (r *Readiness) MarkStarted() {
 	}
 }
 
+// MarkStopping records that musterd has begun shutdown. musterd is not
+// ready from then on.
+func (r *Readiness) MarkStopping() {
+	r.mu.Lock()
+	was := r.stopping
+	r.stopping = true
+	r.mu.Unlock()
+	if !was {
+		r.setReady(CheckStopping, false)
+	}
+}
+
 // Ready reports whether every check passes, and the status of each check,
-// started first.
+// started first, then stopping.
 func (r *Readiness) Ready() (bool, []Status) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -169,7 +186,11 @@ func (r *Readiness) Ready() (bool, []Status) {
 	if !r.started {
 		started.Err = "startup is not complete"
 	}
-	out := append([]Status{started}, r.statuses...)
+	stopping := Status{Name: CheckStopping, OK: !r.stopping}
+	if r.stopping {
+		stopping.Err = "shutdown has begun"
+	}
+	out := append([]Status{started, stopping}, r.statuses...)
 	ready := true
 	for _, s := range out {
 		ready = ready && s.OK
