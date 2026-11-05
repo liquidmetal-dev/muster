@@ -1,8 +1,10 @@
-// Package server is the HTTP(S) listener that the webhook intake mounts on
-// (design §2). It routes POST /webhook to the webhook handler. Other
-// routes, such as health endpoints, are added with Handle before Serve.
-// With a tls block it serves HTTPS from the configured certificate and key;
-// without one it serves plain HTTP (requirement INTAKE-8).
+// Package server is muster's HTTP(S) listener. It serves two listeners:
+// the webhook listener, which routes POST /webhook to the webhook handler
+// (design §2), and the ops listener from NewOps, which serves /metrics,
+// /healthz and /readyz on metrics_addr (requirements OBS-1 and OBS-3).
+// Other routes are added with Handle before Serve. With a tls block it
+// serves HTTPS from the configured certificate and key; without one it
+// serves plain HTTP (requirement INTAKE-8).
 package server
 
 import (
@@ -31,13 +33,13 @@ const (
 type Config struct {
 	// Listen is the listener address and optional TLS.
 	Listen config.Listen
-	// Webhook serves POST /webhook. Required.
+	// Webhook serves POST /webhook. Nil mounts no webhook route.
 	Webhook http.Handler
 	// Logger is nil for slog.Default().
 	Logger *slog.Logger
 }
 
-// Server is the webhook listener.
+// Server is one listener.
 type Server struct {
 	addr string
 	mux  *http.ServeMux
@@ -47,9 +49,6 @@ type Server struct {
 // New returns a Server. It loads the TLS certificate and key now, so that
 // a bad file fails at startup.
 func New(cfg Config) (*Server, error) {
-	if cfg.Webhook == nil {
-		return nil, errors.New("server: webhook handler is required")
-	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -61,7 +60,9 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 	mux := http.NewServeMux()
-	mux.Handle("POST /webhook", cfg.Webhook)
+	if cfg.Webhook != nil {
+		mux.Handle("POST /webhook", cfg.Webhook)
+	}
 	return &Server{
 		addr: cfg.Listen.Addr,
 		mux:  mux,

@@ -75,3 +75,40 @@ job (`docs/adr/2026-11-05-session-centric-latency.md`). They do not include the 
 GitHub takes to deliver or list a job. A session that musterd adopted at startup has no
 creation time in that process. It is counted in `muster_sessions` and
 `muster_sessions_finished_total`, but not in the histograms.
+
+## Health
+
+musterd serves two health endpoints on `metrics_addr`, next to `/metrics`
+(`docs/adr/2026-11-05-ops-listener-and-readiness.md`). The webhook listener serves only
+`POST /webhook`, so a load balancer in front of the webhook listener must probe
+`metrics_addr`.
+
+- `GET /healthz` returns `200` and `ok` while the process serves HTTP. Use it as a liveness
+  probe.
+- `GET /readyz` returns `200` when musterd is ready and `503` when it is not. Use it as a
+  readiness probe.
+
+`/readyz` has three checks:
+
+| Check | Passes when |
+| --- | --- |
+| `started` | musterd has completed startup: the configuration is loaded, pools and sessions are reconciled, and the intakes run. |
+| `battery` | The latest battery `ListHosts` call succeeded. |
+| `github` | The latest GitHub credential check succeeded. |
+
+A background loop runs the `battery` and `github` checks every 15s, each with a 5s timeout.
+`/readyz` returns the latest results and makes no call itself, so it uses no GitHub rate
+limit. One failed check makes musterd not ready. The next check that passes makes it ready
+again. A result can be up to one interval old.
+
+The body names each check, its result and the time of the last check:
+
+```json
+{"ready":false,"checks":[
+  {"name":"started","ok":true},
+  {"name":"battery","ok":false,"error":"battery: ListHosts: unavailable","at":"2026-11-05T12:00:15Z"},
+  {"name":"github","ok":true,"at":"2026-11-05T12:00:15Z"}
+]}
+```
+
+`muster_ready{check}` has the same results as a metric.
