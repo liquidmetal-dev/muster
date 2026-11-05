@@ -86,3 +86,24 @@ func TestJobStartedDuringHeartbeat(t *testing.T) {
 		t.Fatal("no line has job_id")
 	}
 }
+
+func TestSecondJobReplacesJobID(t *testing.T) {
+	e := newEnv(t)
+	c := e.capture()
+	e.start()
+	_, runner, _ := e.running(c)
+	e.Registry.JobStarted(runner, 1)
+	e.waitLog(`"msg":"runner busy"`)
+	e.Registry.JobStarted(runner, 2)
+	e.Registry.JobCompleted(runner)
+	e.waitLog(`"msg":"job completed"`)
+	line := ""
+	for l := range strings.SplitSeq(e.Logs.String(), "\n") {
+		if strings.Contains(l, `"msg":"job completed"`) {
+			line = l
+		}
+	}
+	if n := strings.Count(line, `"job_id":`); n != 1 || !strings.Contains(line, `"job_id":2`) {
+		t.Fatalf("job completed line = %s, want one job_id of 2", line)
+	}
+}
