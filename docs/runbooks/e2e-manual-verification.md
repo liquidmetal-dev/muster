@@ -178,8 +178,12 @@ has no runner.
 
 **A runner with no lease:**
 
-1. Start a job that runs for 3 minutes (`-f sleep=180`), and wait for `runner busy`.
-2. Stop musterd: `sudo systemctl stop musterd`.
+GitHub does not delete a runner that is busy with a job, so this check uses a runner that is
+online without a job.
+
+1. Do steps 2 and 3 of scenario 4a: start a job and cancel it before the runner comes online.
+2. When the log shows `runner online` and no `runner busy` for the session, stop musterd
+   before the idle timeout: `sudo systemctl stop musterd`.
 3. Find the session's lease and release it by hand, so that the runner has no lease:
 
    ```sh
@@ -195,8 +199,7 @@ has no runner.
   runner name.
 - `curl -s localhost:9090/metrics | grep muster_reconcile_decisions_total` shows
   `action="delete_runner",outcome="ok"` at 1.
-- `runners` no longer lists the runner. The job fails or is cancelled on GitHub, because its
-  runner and its VM are gone.
+- `runners` no longer lists the runner.
 
 **A lease with no runner:**
 
@@ -242,7 +245,12 @@ Change the configuration back after the check.
 
 ## Clean up
 
-1. Cancel any run that is still queued: `gh run list -R "$REPO" -s queued`.
+1. Cancel any run that is still queued:
+
+   ```sh
+   gh run list -R "$REPO" -s queued --json databaseId -q '.[].databaseId' |
+     xargs -r -n1 gh run cancel -R "$REPO"
+   ```
 2. Check that `runners` lists no `muster-$NS-` runner, and that
    `poolmgrctl lease list --pool "$POOL" --namespace "$NS"` shows no lease.
 3. Remove the `muster-e2e.yml` workflow from the test repository if you do not need it again.

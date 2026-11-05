@@ -100,7 +100,8 @@ The App needs these permissions (GH-6). Give it the scope's row and the common r
 | Repository: Metadata | Read | both | GitHub gives it to every App. |
 
 Subscribe the App to the **Workflow job** event (`workflow_job`) when you use the webhook
-intake. Set the webhook URL to `https://<host>/webhook` and set the webhook secret to the
+intake. Set the webhook URL to `https://<host>:<port>/webhook`, where the port is the one in
+`listen.addr` or the one of your TLS terminator, and set the webhook secret to the
 value in `github.webhook_secret_file`.
 
 The permissions come from GitHub's
@@ -124,7 +125,7 @@ a repository pool, of the organization for an organization pool.
 
 The webhook intake does not need the token: the App, or a repository or organization webhook,
 sends the deliveries. A repository or organization webhook needs the **Workflow jobs** event,
-the URL `https://<host>/webhook`, content type `application/json` and the webhook secret.
+the URL `https://<host>:<port>/webhook`, content type `application/json` and the webhook secret.
 
 ### GitHub Enterprise Server
 
@@ -197,8 +198,12 @@ Session timers. Each must be a positive duration.
 
 ## pools
 
-Each entry is one [pool](../GLOSSARY.md#pools). musterd makes battery's pools in its namespace
-equal to this list at startup.
+Each entry is one [pool](../GLOSSARY.md#pools). At startup, musterd creates or updates the
+battery pool for each entry in its namespace. A pool in the namespace that this list does not
+name is an orphan pool: musterd logs it and keeps it. It deletes an orphan pool only when
+pruning is on (the `--prune-pools` flag of the
+[design](design/2026-10-27-muster-design.md); musterd does not have the flag yet). A pool with
+leased VMs stays until a later start.
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |

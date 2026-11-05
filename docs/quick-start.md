@@ -13,8 +13,8 @@ other pages for the details.
 - A Linux host with KVM (`/dev/kvm`) for flintlock and Firecracker.
 - A host for poolmgrd (battery) and musterd. It can be the flintlock host.
 - A GitHub repository where you are an admin. This page uses `you/your-repo`.
-- An HTTPS address that GitHub can reach, such as `https://muster.example.com`, for the
-  webhook. If GitHub cannot reach your host, use the [polling configuration](#no-inbound-access)
+- An HTTPS address that GitHub can reach, such as `https://muster.example.com:8443`, for
+  the webhook. If GitHub cannot reach your host, use the [polling configuration](#no-inbound-access)
   in step 6.
 
 ## 2. Prepare the flintlock host
@@ -56,7 +56,9 @@ flags instead. The name `host-a` is the name that musterd uses for the host. See
 
 1. Open the settings of the account that owns `you/your-repo`: **Settings > Developer
    settings > GitHub Apps > New GitHub App**.
-2. Set the webhook URL to `https://muster.example.com/webhook`. Make a random webhook secret
+2. Set the webhook URL to `https://muster.example.com:8443/webhook`. Port 8443 is
+   `listen.addr` in step 6. With a TLS terminator in front of musterd, use the terminator's
+   address and port instead. Make a random webhook secret
    and keep it, for example with `openssl rand -hex 32`.
 3. Give the App these repository permissions:
    - **Administration**: Read and write
