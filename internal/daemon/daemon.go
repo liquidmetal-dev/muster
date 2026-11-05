@@ -319,6 +319,9 @@ func (d *daemon) startupErr(stop context.Context, step string, err error) error 
 
 func (d *daemon) shutdown(force context.Context, stopPoller, stopSessions func()) {
 	d.readiness.MarkStopping()
+	// Drain before the intakes stop: a webhook request still open hands
+	// off its job while the listener shuts down.
+	d.disp.Drain()
 	if d.webhook != nil {
 		d.shutdownServer(d.webhook)
 	}

@@ -1,6 +1,10 @@
 package daemon_test
 
 import (
+	"bufio"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -197,5 +201,49 @@ func TestNoListenStartsNoWebhookListener(t *testing.T) {
 	r.waitReady()
 	if r.webhookURL != "" {
 		t.Fatalf("webhookURL = %q, want none", r.webhookURL)
+	}
+}
+
+// TestRequestDuringShutdownCreatesNoSession holds a queued delivery open
+// across the first signal, so the handler hands off its job while the
+// webhook listener shuts down.
+func TestRequestDuringShutdownCreatesNoSession(t *testing.T) {
+	f := newFakes(t)
+	r := f.start(t, startOptions{})
+	r.waitReady()
+
+	body := fmt.Appendf(nil, `{"action":"queued","workflow_job":{"id":4242,"labels":["self-hosted","linux"],"created_at":"2026-11-05T12:00:00Z"},"repository":{"full_name":%q}}`, repoA)
+	mac := hmac.New(sha256.New, []byte(webhookSecret))
+	mac.Write(body)
+	conn, err := net.Dial("tcp", strings.TrimPrefix(r.webhookURL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	head := fmt.Sprintf("POST /webhook HTTP/1.1\r\nHost: musterd\r\nContent-Type: application/json\r\n"+
+		"X-GitHub-Event: workflow_job\r\nX-GitHub-Delivery: 7f0d4b3e-0000-4000-8000-000000000001\r\n"+
+		"X-Hub-Signature-256: sha256=%s\r\nContent-Length: %d\r\n\r\n", hex.EncodeToString(mac.Sum(nil)), len(body))
+	if _, err := conn.Write(append([]byte(head), body[:len(body)-1]...)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	r.signal()
+	time.Sleep(200 * time.Millisecond)
+	if _, err := conn.Write(body[len(body)-1:]); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		t.Fatalf("delivery status = %d, want 2xx", resp.StatusCode)
+	}
+	if err := r.mustReturn(10 * time.Second); err != nil {
+		t.Fatalf("Run = %v, want nil", err)
+	}
+	if n := f.Pool.CallCount("ClaimVM"); n != 0 {
+		t.Fatalf("ClaimVM calls = %d, want 0 after the first signal", n)
 	}
 }
