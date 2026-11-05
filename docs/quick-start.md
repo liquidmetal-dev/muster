@@ -44,11 +44,13 @@ Run poolmgrd as battery's documentation describes
 under the name `host-a`:
 
 ```sh
-poolmgrctl --addr battery.example.com:9091 host add host-a --address <flintlock-host>:9090
+poolmgrctl --addr battery.example.com:9091 host add host-a --address <flintlock-host>:9090 --flintlock-insecure
 poolmgrctl --addr battery.example.com:9091 host get host-a
 ```
 
-The name `host-a` is the name that musterd uses for the host. See [hosts](operations/hosts.md).
+`--flintlock-insecure` matches the flintlockd of step 2, which runs without TLS. For a host
+with TLS, use the `--flintlock-ca-file`, `--flintlock-cert-file` and `--flintlock-key-file`
+flags instead. The name `host-a` is the name that musterd uses for the host. See [hosts](operations/hosts.md).
 
 ## 4. Create the GitHub App
 

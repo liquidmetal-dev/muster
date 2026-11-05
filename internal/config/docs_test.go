@@ -150,6 +150,15 @@ func TestConfigurationDocDefaults(t *testing.T) {
 		"pools[].max_concurrent":              "2 × size",
 		"pools[].max_session_duration":        "defaults.max_session_duration",
 		"pools[].replenishment_strategy.type": config.StrategyImmediateOnLease,
+		"github.poll.enabled":                 "`false`",
+		"battery.tls":                         "TLS with the system CAs",
+		"flintlock.tls":                       "TLS with the system CAs",
+		"pools[].scope.runner_group":          "the default group",
+	}
+	for path, def := range documentedDefaults(doc) {
+		if _, ok := defaults[path]; !ok {
+			t.Errorf("row for `%s` gives the default %s, but the test does not check it", path, def)
+		}
 	}
 	for path, want := range defaults {
 		row := tableRow(doc, path)
@@ -161,6 +170,26 @@ func TestConfigurationDocDefaults(t *testing.T) {
 			t.Errorf("row for `%s` does not give the default %q:\n  %s", path, want, row)
 		}
 	}
+}
+
+// documentedDefaults maps each field path to the Default cell of its
+// row, for the rows of a Field | Type | Default | Notes table that give
+// a default.
+func documentedDefaults(doc string) map[string]string {
+	out := map[string]string{}
+	for line := range strings.Lines(doc) {
+		cells := strings.Split(strings.TrimSpace(line), "|")
+		if len(cells) != 6 || !strings.HasPrefix(strings.TrimSpace(cells[1]), "`") {
+			continue
+		}
+		path := strings.Trim(strings.TrimSpace(cells[1]), "`")
+		switch def := strings.TrimSpace(cells[3]); {
+		case def == "", def == "none", strings.HasPrefix(def, "required"):
+		default:
+			out[path] = def
+		}
+	}
+	return out
 }
 
 // tableRow returns the Markdown table row whose first cell is `path`.
