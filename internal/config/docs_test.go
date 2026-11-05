@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -77,21 +78,21 @@ func TestConfigurationDocCoversEveryField(t *testing.T) {
 
 	var missing []string
 	for _, p := range fieldPaths(reflect.TypeFor[config.Config](), "") {
-		if !strings.Contains(doc, "`"+p+"`") {
+		if tableRow(doc, p) == "" {
 			missing = append(missing, p)
 		}
 	}
 	tls := section(doc, "## TLS blocks")
 	for _, tt := range tlsTypes {
 		for _, p := range fieldPaths(tt, "") {
-			if !strings.Contains(tls, "`"+p+"`") {
+			if tableRow(tls, p) == "" {
 				missing = append(missing, "TLS blocks: "+p)
 			}
 		}
 	}
 	slices.Sort(missing)
 	if missing = slices.Compact(missing); len(missing) > 0 {
-		t.Errorf("%s does not document:\n  %s", configurationDoc, strings.Join(missing, "\n  "))
+		t.Errorf("%s has no table row for:\n  %s", configurationDoc, strings.Join(missing, "\n  "))
 	}
 
 	for _, want := range []string{"/api/v3", "one owner", "TLS terminator in front"} {
@@ -175,6 +176,8 @@ func tableRow(doc, path string) string {
 
 const quickStartDoc = "../../docs/quick-start.md"
 
+var musterFiles = regexp.MustCompile(`/etc/muster/[^"]+`)
+
 // jsonBlocks returns the body of every fenced code block opened with
 // ```json.
 func jsonBlocks(doc string) []string {
@@ -198,7 +201,8 @@ func jsonBlocks(doc string) []string {
 }
 
 func TestQuickStartConfigsParse(t *testing.T) {
-	blocks := jsonBlocks(readDoc(t, quickStartDoc))
+	doc := readDoc(t, quickStartDoc)
+	blocks := jsonBlocks(doc)
 	if len(blocks) != 2 {
 		t.Fatalf("%s has %d json blocks, want 2 (webhook and polling configs)", quickStartDoc, len(blocks))
 	}
@@ -222,6 +226,17 @@ func TestQuickStartConfigsParse(t *testing.T) {
 			t.Errorf("json block %d: microvm_template.rootVolume.sizeInMb is not set", i+1)
 		}
 		cfgs[i] = cfg
+	}
+	prose := doc
+	for _, block := range blocks {
+		prose = strings.Replace(prose, block, "", 1)
+	}
+	for i, block := range blocks {
+		for _, f := range musterFiles.FindAllString(block, -1) {
+			if !strings.Contains(prose, f) {
+				t.Errorf("json block %d names %s, but no step of the quick start puts it there", i+1, f)
+			}
+		}
 	}
 	if cfgs[0].Listen == nil {
 		t.Error("json block 1: listen is not set; the first config uses the webhook intake")

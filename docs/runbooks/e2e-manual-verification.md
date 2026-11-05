@@ -176,6 +176,8 @@ signal ends the session. Do the steps again. Then set `idle_timeout` back and re
 **Purpose:** at startup, musterd deletes a runner that has no lease and releases a lease that
 has no runner.
 
+**A runner with no lease:**
+
 1. Start a job that runs for 3 minutes (`-f sleep=180`), and wait for `runner busy`.
 2. Stop musterd: `sudo systemctl stop musterd`.
 3. Find the session's lease and release it by hand, so that the runner has no lease:
@@ -195,6 +197,24 @@ has no runner.
   `action="delete_runner",outcome="ok"` at 1.
 - `runners` no longer lists the runner. The job fails or is cancelled on GitHub, because its
   runner and its VM are gone.
+
+**A lease with no runner:**
+
+1. Stop musterd: `sudo systemctl stop musterd`.
+2. Claim a VM of the pool by hand. The lease has no runner on GitHub:
+
+   ```sh
+   poolmgrctl lease claim --pool "$POOL" --namespace "$NS" --request-id e2e-orphan
+   ```
+
+3. Start musterd: `sudo systemctl start musterd`.
+
+**Expected:**
+
+- The log shows `reconcile decision` with the action `release_lease` for the lease.
+- `curl -s localhost:9090/metrics | grep muster_reconcile_decisions_total` shows
+  `action="release_lease",outcome="ok"` at 1.
+- `poolmgrctl lease list --pool "$POOL" --namespace "$NS"` no longer shows the lease.
 
 - [ ] Pass
 

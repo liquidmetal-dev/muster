@@ -79,12 +79,23 @@ permission. To use a personal access token instead of an App, see
 
 ## 5. Install musterd
 
-Install the package and the unit as [install](operations/install.md) describes. Put the
-secrets in `/etc/muster`, with mode 0640 and the owner `root:muster`:
+Install the package and the unit as [install](operations/install.md) describes. Put these
+files in `/etc/muster`, with mode 0640 and the owner `root:muster`:
+
+- The App private key from step 4.
+- The webhook secret from step 4.
+- The certificate and key that musterd serves the webhook with, for the name in the webhook
+  URL. Leave them out if a TLS terminator is in front of musterd (see step 6).
+- The CA certificate that signs poolmgrd's server certificate. If poolmgrd uses a
+  certificate from a public CA, leave it out and remove `ca_file` from `battery.tls` in
+  step 6.
 
 ```sh
 sudo install -m 0640 -g muster app.private-key.pem /etc/muster/app.pem
 printf '%s' '<webhook secret>' | sudo install -m 0640 -g muster /dev/stdin /etc/muster/webhook.secret
+sudo install -m 0640 -g muster muster.example.com.crt /etc/muster/tls.crt
+sudo install -m 0640 -g muster muster.example.com.key /etc/muster/tls.key
+sudo install -m 0640 -g muster poolmgrd-ca.pem /etc/muster/battery-ca.pem
 ```
 
 ## 6. Configure musterd
