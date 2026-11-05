@@ -284,3 +284,19 @@ func TestOpsListenerFailureDuringStartup(t *testing.T) {
 		t.Fatalf("Run = %v, want an ops listener error", err)
 	}
 }
+
+func TestShutdownGraceBoundsListenerWait(t *testing.T) {
+	f := newFakes(t)
+	r := f.start(t, startOptions{})
+	r.waitReady()
+	holdDelivery(t, r)
+	time.Sleep(100 * time.Millisecond)
+	start := time.Now()
+	r.signal()
+	if err := r.mustReturn(5 * time.Second); err != nil {
+		t.Fatalf("Run = %v, want nil", err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("shutdown took %s, want it within the 1s shutdown grace plus margin", d)
+	}
+}

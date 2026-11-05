@@ -333,17 +333,26 @@ func (d *daemon) shutdown(force context.Context, stopPoller, stopSessions func()
 	// Drain before the intakes stop: a webhook request still open hands
 	// off its job while the listener shuts down.
 	d.disp.Drain()
-	if d.webhook != nil {
-		d.shutdownServer(force, d.webhook)
-	}
-	stopPoller()
+	grace := d.cfg.ShutdownGrace.Duration()
+	// The intakes stop alongside the grace wait, so the whole shutdown
+	// stays within the shutdown grace.
+	var intakes sync.WaitGroup
+	intakes.Go(func() {
+		if d.webhook != nil {
+			ctx, cancel := context.WithTimeout(force, grace)
+			defer cancel()
+			d.shutdownServer(ctx, d.webhook)
+		}
+		stopPoller()
+	})
 	reconcile.Shutdown(force, reconcile.ShutdownConfig{
 		Dispatcher: d.disp,
 		Sessions:   d.sessions,
 		Stop:       stopSessions,
-		Grace:      d.cfg.ShutdownGrace.Duration(),
+		Grace:      grace,
 		Logger:     d.log,
 	})
+	intakes.Wait()
 }
 
 // shutdownServer waits for open requests until shutdownTimeout or force.
