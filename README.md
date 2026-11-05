@@ -21,6 +21,11 @@ and deletes the VM when the job ends. It is part of the
 - ADR: [battery as the VM source](docs/adr/2026-10-27-battery-as-vm-source.md)
 - ADR: [packaging and the systemd unit](docs/adr/2026-11-05-packaging-and-systemd-unit.md)
 
+## Install and release
+
+- [Installing musterd](docs/operations/install.md)
+- [Releasing muster](docs/releasing.md)
+
 ## Build and test
 
 Install the pinned toolchain with [mise](https://mise.jdx.dev):
