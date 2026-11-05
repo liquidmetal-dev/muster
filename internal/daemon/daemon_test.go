@@ -212,24 +212,11 @@ func TestRequestDuringShutdownCreatesNoSession(t *testing.T) {
 	r := f.start(t, startOptions{})
 	r.waitReady()
 
-	body := fmt.Appendf(nil, `{"action":"queued","workflow_job":{"id":4242,"labels":["self-hosted","linux"],"created_at":"2026-11-05T12:00:00Z"},"repository":{"full_name":%q}}`, repoA)
-	mac := hmac.New(sha256.New, []byte(webhookSecret))
-	mac.Write(body)
-	conn, err := net.Dial("tcp", strings.TrimPrefix(r.webhookURL, "http://"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = conn.Close() }()
-	head := fmt.Sprintf("POST /webhook HTTP/1.1\r\nHost: musterd\r\nContent-Type: application/json\r\n"+
-		"X-GitHub-Event: workflow_job\r\nX-GitHub-Delivery: 7f0d4b3e-0000-4000-8000-000000000001\r\n"+
-		"X-Hub-Signature-256: sha256=%s\r\nContent-Length: %d\r\n\r\n", hex.EncodeToString(mac.Sum(nil)), len(body))
-	if _, err := conn.Write(append([]byte(head), body[:len(body)-1]...)); err != nil {
-		t.Fatal(err)
-	}
+	conn, last := holdDelivery(t, r)
 	time.Sleep(100 * time.Millisecond)
 	r.signal()
 	time.Sleep(200 * time.Millisecond)
-	if _, err := conn.Write(body[len(body)-1:]); err != nil {
+	if _, err := conn.Write(last); err != nil {
 		t.Fatal(err)
 	}
 	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
@@ -245,5 +232,55 @@ func TestRequestDuringShutdownCreatesNoSession(t *testing.T) {
 	}
 	if n := f.Pool.CallCount("ClaimVM"); n != 0 {
 		t.Fatalf("ClaimVM calls = %d, want 0 after the first signal", n)
+	}
+}
+
+// holdDelivery sends a signed queued delivery without its last byte and
+// returns the connection and that byte.
+func holdDelivery(t *testing.T, r *running) (net.Conn, []byte) {
+	t.Helper()
+	body := fmt.Appendf(nil, `{"action":"queued","workflow_job":{"id":4242,"labels":["self-hosted","linux"],"created_at":"2026-11-05T12:00:00Z"},"repository":{"full_name":%q}}`, repoA)
+	mac := hmac.New(sha256.New, []byte(webhookSecret))
+	mac.Write(body)
+	conn, err := net.Dial("tcp", strings.TrimPrefix(r.webhookURL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	head := fmt.Sprintf("POST /webhook HTTP/1.1\r\nHost: musterd\r\nContent-Type: application/json\r\n"+
+		"X-GitHub-Event: workflow_job\r\nX-GitHub-Delivery: 7f0d4b3e-0000-4000-8000-000000000001\r\n"+
+		"X-Hub-Signature-256: sha256=%s\r\nContent-Length: %d\r\n\r\n", hex.EncodeToString(mac.Sum(nil)), len(body))
+	if _, err := conn.Write(append([]byte(head), body[:len(body)-1]...)); err != nil {
+		t.Fatal(err)
+	}
+	return conn, body[len(body)-1:]
+}
+
+func TestSecondSignalEndsListenerWait(t *testing.T) {
+	f := newFakes(t)
+	r := f.start(t, startOptions{})
+	r.waitReady()
+	holdDelivery(t, r)
+	time.Sleep(100 * time.Millisecond)
+	r.signal()
+	time.Sleep(100 * time.Millisecond)
+	r.signal()
+	if err := r.mustReturn(2 * time.Second); err != nil {
+		t.Fatalf("Run = %v, want nil", err)
+	}
+}
+
+func TestOpsListenerFailureDuringStartup(t *testing.T) {
+	f := newFakes(t)
+	f.Pool.Stall("ListLeases", 30*time.Second)
+	trip := &tripListener{Listener: listen(t), tripped: make(chan struct{})}
+	t.Cleanup(trip.trip)
+	r := f.start(t, startOptions{options: func(o *daemon.Options) { o.OpsListener = trip }})
+	waitFor(t, 5*time.Second, func() bool { return f.Pool.CallCount("ListLeases") >= 1 },
+		func() string { return "session reconciliation did not start; logs:\n" + r.logs.String() })
+	trip.trip()
+	err := r.mustReturn(5 * time.Second)
+	if err == nil || !strings.Contains(err.Error(), "ops listener") {
+		t.Fatalf("Run = %v, want an ops listener error", err)
 	}
 }

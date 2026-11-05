@@ -218,11 +218,14 @@ func listenOn(given net.Listener, addr, name string) (net.Listener, error) {
 func (d *daemon) run(stop, force context.Context) error {
 	var g group
 	defer g.wg.Wait()
-	serveErr := make(chan error, 2)
+	// run ends at the first signal or when a listener fails; its cause is
+	// the listener error.
+	run, fail := context.WithCancelCause(stop)
+	defer fail(nil)
 	serve := func(s *server.Server, ln net.Listener, name string) {
 		g.wg.Go(func() {
 			if err := s.Serve(ln); err != nil {
-				serveErr <- fmt.Errorf("%s: %w", name, err)
+				fail(fmt.Errorf("%s: %w", name, err))
 			}
 		})
 	}
@@ -235,16 +238,16 @@ func (d *daemon) run(stop, force context.Context) error {
 		return err
 	}
 	serve(d.ops, opsLn, "ops listener")
-	defer d.shutdownServer(d.ops)
+	defer d.shutdownServer(force, d.ops)
 	stopProbes := g.goCtx(base, d.readiness.Run)
 	defer stopProbes()
 
 	hc := pools.NewHostCheck(d.admin)
-	err = config.Check(stop, d.cfg, github.Checker{Client: d.gh}, hc, flintlock.NewChecker(d.execer, hc.Resolve, d.log))
+	err = config.Check(run, d.cfg, github.Checker{Client: d.gh}, hc, flintlock.NewChecker(d.execer, hc.Resolve, d.log))
 	if err != nil {
-		return d.startupErr(stop, "config check", err)
+		return d.startupErr(stop, run, "config check", err)
 	}
-	res, err := pools.Reconcile(stop, pools.Config{
+	res, err := pools.Reconcile(run, pools.Config{
 		Namespace: d.cfg.Battery.Namespace,
 		Pools:     d.cfg.Pools,
 		Defaults:  d.cfg.Defaults,
@@ -253,7 +256,7 @@ func (d *daemon) run(stop, force context.Context) error {
 		Logger:    d.log,
 	})
 	if err != nil {
-		return d.startupErr(stop, "pool reconciliation", err)
+		return d.startupErr(stop, run, "pool reconciliation", err)
 	}
 	d.log.Info("pools reconciled", "created", len(res.Created), "updated", len(res.Updated), "orphans", len(res.Orphans), "pruned", len(res.Pruned))
 
@@ -263,11 +266,11 @@ func (d *daemon) run(stop, force context.Context) error {
 	stopSessions := func() { cancelSessions(); <-sessDone }
 	select {
 	case <-d.sessions.Running():
-	case <-stop.Done():
+	case <-run.Done():
 		stopSessions()
-		return nil
+		return failure(stop, run)
 	}
-	if _, err := reconcile.Run(stop, reconcile.Config{
+	if _, err := reconcile.Run(run, reconcile.Config{
 		Namespace: d.cfg.Battery.Namespace,
 		Pools:     d.cfg.Pools,
 		Source:    d.src,
@@ -277,7 +280,7 @@ func (d *daemon) run(stop, force context.Context) error {
 		Logger:    d.log,
 	}); err != nil {
 		stopSessions()
-		return d.startupErr(stop, "session reconciliation", err)
+		return d.startupErr(stop, run, "session reconciliation", err)
 	}
 
 	stopDispatch := g.goCtx(base, d.disp.Run)
@@ -292,27 +295,35 @@ func (d *daemon) run(stop, force context.Context) error {
 		}
 		serve(d.webhook, ln, "webhook listener")
 	}
-	if stop.Err() != nil {
+	if run.Err() != nil {
 		d.shutdown(force, stopPoller, stopSessions)
-		return nil
+		return failure(stop, run)
 	}
 	d.readiness.MarkStarted()
 	d.log.Info("musterd ready")
 
-	var runErr error
-	select {
-	case <-stop.Done():
-		d.log.Info("musterd stopping")
-	case runErr = <-serveErr:
+	<-run.Done()
+	runErr := failure(stop, run)
+	if runErr != nil {
 		d.log.Error("musterd stopping after a listener failed", "err", runErr)
+	} else {
+		d.log.Info("musterd stopping")
 	}
 	d.shutdown(force, stopPoller, stopSessions)
 	return runErr
 }
 
-func (d *daemon) startupErr(stop context.Context, step string, err error) error {
-	if stop.Err() != nil {
+// failure is the listener error that ended run, or nil when a signal did.
+func failure(stop, run context.Context) error {
+	if stop.Err() != nil || run.Err() == nil {
 		return nil
+	}
+	return context.Cause(run)
+}
+
+func (d *daemon) startupErr(stop, run context.Context, step string, err error) error {
+	if run.Err() != nil {
+		return failure(stop, run)
 	}
 	return fmt.Errorf("startup: %s: %w", step, err)
 }
@@ -323,7 +334,7 @@ func (d *daemon) shutdown(force context.Context, stopPoller, stopSessions func()
 	// off its job while the listener shuts down.
 	d.disp.Drain()
 	if d.webhook != nil {
-		d.shutdownServer(d.webhook)
+		d.shutdownServer(force, d.webhook)
 	}
 	stopPoller()
 	reconcile.Shutdown(force, reconcile.ShutdownConfig{
@@ -335,8 +346,9 @@ func (d *daemon) shutdown(force context.Context, stopPoller, stopSessions func()
 	})
 }
 
-func (d *daemon) shutdownServer(s *server.Server) {
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+// shutdownServer waits for open requests until shutdownTimeout or force.
+func (d *daemon) shutdownServer(force context.Context, s *server.Server) {
+	ctx, cancel := context.WithTimeout(force, shutdownTimeout)
 	defer cancel()
 	if err := s.Shutdown(ctx); err != nil {
 		d.log.Warn("listener shutdown", "err", err)
