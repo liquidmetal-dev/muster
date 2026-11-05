@@ -16,6 +16,7 @@ import (
 
 	"github.com/liquidmetal-dev/muster/internal/config"
 	"github.com/liquidmetal-dev/muster/internal/fakegithub"
+	"github.com/liquidmetal-dev/muster/internal/intake/webhook"
 	"github.com/liquidmetal-dev/muster/internal/session"
 	"github.com/liquidmetal-dev/muster/internal/vmsource/flintlock/fakeexec"
 )
@@ -89,7 +90,7 @@ func TestStartingToRunningOnJobStarted(t *testing.T) {
 	id := e.create(testPool)
 	c.waitStdin(t)
 	info, _ := e.info(id)
-	e.Registry.JobStarted(info.RunnerName)
+	e.Registry.JobStarted(info.RunnerName, 1)
 	e.waitState(id, session.Running)
 	if info, _ = e.info(id); !info.Busy {
 		t.Error("busy = false after JobStarted")
@@ -102,7 +103,7 @@ func TestStartingToRunningOnJobStarted(t *testing.T) {
 func TestJobStartedUnknownRunnerIgnored(t *testing.T) {
 	e := newEnv(t)
 	e.start()
-	e.Registry.JobStarted("muster-muster-linux-zzzzzzzzzzzz")
+	e.Registry.JobStarted("muster-muster-linux-zzzzzzzzzzzz", 1)
 	e.Registry.JobCompleted("someone-else")
 }
 
@@ -114,7 +115,7 @@ func TestNoRunningBeforeConfigSent(t *testing.T) {
 	id := e.create(testPool)
 	waitFor(t, func() bool { return e.GitHub.RequestCount(fakegithub.PatternRepoJITConfig) == 1 })
 	info, _ := e.info(id)
-	e.Registry.JobStarted(info.RunnerName)
+	e.Registry.JobStarted(info.RunnerName, 1)
 	e.drive(time.Second, func() bool { return e.elapsed() >= 5*time.Second })
 	if st := e.state(id); st != session.Starting {
 		t.Fatalf("state with exec held = %v, want STARTING", st)
@@ -217,7 +218,7 @@ func TestExecBrokenWhileStartingIsNotEnd(t *testing.T) {
 		t.Fatalf("state after the exec stream broke = %v, want STARTING", st)
 	}
 	info, _ := e.info(id)
-	e.Registry.JobStarted(info.RunnerName)
+	e.Registry.JobStarted(info.RunnerName, 1)
 	e.waitState(id, session.Running)
 }
 
@@ -272,7 +273,7 @@ func TestRunnerOutputLogged(t *testing.T) {
 		return strings.Contains(l, `"stream":"stdout","line":"hello"`) && strings.Contains(l, `"stream":"stderr","line":"oops"`)
 	})
 	info, _ := e.info(id)
-	e.Registry.JobStarted(info.RunnerName)
+	e.Registry.JobStarted(info.RunnerName, 1)
 	e.waitState(id, session.Running)
 }
 
@@ -359,3 +360,5 @@ func TestVMLostDuringLaunch(t *testing.T) {
 		t.Fatalf("ended = %v %v, want FAILED vm_lost", got.State, got.Reason)
 	}
 }
+
+var _ webhook.Runners = (*session.Registry)(nil)

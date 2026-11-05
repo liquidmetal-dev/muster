@@ -18,19 +18,21 @@ const maxLogLine = 64 << 10
 func (r *Registry) forwardOutput(ctx context.Context, s *session, es vmsource.ExecSession) {
 	for stream, rd := range map[string]io.Reader{"stdout": es.Stdout(), "stderr": es.Stderr()} {
 		go func() {
-			if !s.log.Enabled(ctx, slog.LevelDebug) {
+			if !s.logger().Enabled(ctx, slog.LevelDebug) {
 				_, _ = io.Copy(io.Discard, rd)
 				return
 			}
-			w := &lineLogger{log: s.log, stream: stream}
+			w := &lineLogger{s: s, stream: stream}
 			_, _ = io.Copy(w, rd)
 			w.flush()
 		}()
 	}
 }
 
+// lineLogger reads the session's logger for each line, so a job id added
+// while the runner runs reaches its output.
 type lineLogger struct {
-	log    *slog.Logger
+	s      *session
 	stream string
 	buf    []byte
 }
@@ -59,5 +61,5 @@ func (l *lineLogger) flush() {
 }
 
 func (l *lineLogger) emit(line []byte) {
-	l.log.Debug("runner output", "stream", l.stream, "line", string(bytes.TrimSuffix(line, []byte("\r"))))
+	l.s.logger().Debug("runner output", "stream", l.stream, "line", string(bytes.TrimSuffix(line, []byte("\r"))))
 }

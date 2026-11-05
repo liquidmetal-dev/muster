@@ -47,7 +47,7 @@ func (r *Registry) retry(ctx context.Context, s *session, what string, f func() 
 		if ctx.Err() != nil {
 			return false
 		}
-		s.log.Warn(what, "err", err)
+		s.logger().Warn(what, "err", err)
 		if !r.sleep(ctx, bo.next()) {
 			return false
 		}

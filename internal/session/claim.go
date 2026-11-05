@@ -29,7 +29,7 @@ func (r *Registry) claim(ctx context.Context, s *session) (Reason, bool) {
 			s.vmID = vm.ID()
 			s.claimedAt = r.clock.Now()
 			r.mu.Unlock()
-			s.log = s.log.With("vm_id", vm.ID())
+			s.log.Store(s.logger().With("vm_id", vm.ID()))
 			select {
 			case <-deadline.C():
 				return ReasonClaimDeadline, false
@@ -41,7 +41,7 @@ func (r *Registry) claim(ctx context.Context, s *session) (Reason, bool) {
 			return "", false
 		}
 		if !errors.Is(err, vmsource.ErrExhausted) {
-			s.log.Warn("claim VM", "err", err)
+			s.logger().Warn("claim VM", "err", err)
 			return ReasonClaimError, false
 		}
 		if !r.demandNeeds(s) {

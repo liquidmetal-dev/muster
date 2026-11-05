@@ -28,6 +28,17 @@ func (e *env) logRecord(msg string) map[string]any {
 	return rec
 }
 
+// logLine returns the first JSON log line that contains fragment, or nil.
+func (e *env) logLine(fragment string) map[string]any {
+	for line := range strings.SplitSeq(e.Logs.String(), "\n") {
+		var r map[string]any
+		if strings.Contains(line, fragment) && json.Unmarshal([]byte(line), &r) == nil {
+			return r
+		}
+	}
+	return nil
+}
+
 func wantSessionKeys(t *testing.T, rec map[string]any, id string, keys ...string) {
 	t.Helper()
 	if rec["session_id"] != id {

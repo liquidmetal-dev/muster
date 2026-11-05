@@ -23,6 +23,13 @@ const (
 	actionCompleted  = "completed"
 )
 
+// Runners receives the runner that GitHub reports for an in_progress job.
+// The call must not block, for the same reason as Demand.
+// *session.Registry satisfies it.
+type Runners interface {
+	JobStarted(runnerName string, jobID int64)
+}
+
 // Demand receives the jobs the handler accepts. The calls must not block,
 // because the handler makes them before it responds (requirement
 // INTAKE-4).
@@ -46,12 +53,15 @@ type Config struct {
 	Logger *slog.Logger
 	// Metrics is nil for NopMetrics{}.
 	Metrics Metrics
+	// Runners is optional.
+	Runners Runners
 }
 
 // Handler serves GitHub webhook deliveries.
 type Handler struct {
 	secret     []byte
 	demand     Demand
+	runners    Runners
 	pools      []config.Pool
 	logger     *slog.Logger
 	metrics    Metrics
@@ -78,6 +88,7 @@ func New(cfg Config) (*Handler, error) {
 	return &Handler{
 		secret:     cfg.Secret.Value(),
 		demand:     cfg.Demand,
+		runners:    cfg.Runners,
 		pools:      cfg.Pools,
 		logger:     cfg.Logger,
 		metrics:    cfg.Metrics,
@@ -128,7 +139,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.demand.Queued(demand.Job{ID: wj.GetID(), Labels: wj.Labels, Repo: repo, QueuedAt: wj.GetCreatedAt().Time})
 		}
 	case actionInProgress:
-		handOff = func() { h.demand.Started(wj.GetID()) }
+		handOff = func() {
+			h.demand.Started(wj.GetID())
+			if h.runners != nil && wj.GetRunnerName() != "" {
+				h.runners.JobStarted(wj.GetRunnerName(), wj.GetID())
+			}
+		}
 	case actionCompleted:
 		handOff = func() { h.demand.Completed(wj.GetID()) }
 	default:

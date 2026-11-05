@@ -31,10 +31,10 @@ func (r *Registry) running(ctx context.Context, s *session, run *execRun, carry 
 		if m.busy && idleC != nil {
 			idle.Stop()
 			idleC = nil
-			s.log.Info("runner busy")
+			s.logger().Info("runner busy")
 		}
 		if m.completed && graceC == nil {
-			s.log.Info("job completed", "grace", r.cfg.Grace)
+			s.logger().Info("job completed", "grace", r.cfg.Grace)
 			graceC = r.clock.After(r.cfg.Grace)
 		}
 		if m.absent && s.seen {
@@ -56,7 +56,7 @@ func (r *Registry) running(ctx context.Context, s *session, run *execRun, carry 
 				execDone = nil
 				continue
 			}
-			s.log.Info("runner exited", "exit_code", res.code, "err", res.err)
+			s.logger().Info("runner exited", "exit_code", res.code, "err", res.err)
 			return Ended, ReasonExecExit
 		case <-idleC:
 			return Ended, ReasonIdleTimeout
