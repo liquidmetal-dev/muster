@@ -163,10 +163,16 @@ func validateDefaults(cfg *Config, errs *errorList) {
 		{"defaults.start_timeout", cfg.Defaults.StartTimeout},
 		{"defaults.idle_timeout", cfg.Defaults.IdleTimeout},
 		{"defaults.max_session_duration", cfg.Defaults.MaxSessionDuration},
+		{"defaults.heartbeat_interval", cfg.Defaults.HeartbeatInterval},
+		{"defaults.heartbeat_expiry_threshold", cfg.Defaults.HeartbeatExpiryThreshold},
 	} {
 		if d.v <= 0 {
 			errs.add(d.path, "must be positive")
 		}
+	}
+	hb := cfg.Defaults
+	if hb.HeartbeatInterval > 0 && hb.HeartbeatExpiryThreshold > 0 && hb.HeartbeatExpiryThreshold <= hb.HeartbeatInterval {
+		errs.add("defaults.heartbeat_expiry_threshold", "must be greater than defaults.heartbeat_interval")
 	}
 }
 

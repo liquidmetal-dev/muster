@@ -1,11 +1,25 @@
 // Package fakepoolmgr is an in-memory poolmgrd for tests. It implements
-// battery's Lease and Events services and PoolAdmin.GetPool, with the same
-// status codes as the real server for the cases muster handles: NOT_FOUND
-// for an unknown pool or lease, RESOURCE_EXHAUSTED for an empty pool,
-// INVALID_ARGUMENT for a request id reused on another pool. Every other
-// PoolAdmin RPC returns UNIMPLEMENTED.
+// battery's Lease and Events services, PoolAdmin (GetPool, ListPools,
+// CreatePool, UpdatePool, DeletePool) and HostAdmin.ListHosts, with the
+// same status codes as the real server for the cases muster handles:
 //
-// Tests seed pools with AddPool, inject faults with FailNext, LoseNext and
+//   - NOT_FOUND for an unknown pool or lease;
+//   - RESOURCE_EXHAUSTED for an empty pool;
+//   - INVALID_ARGUMENT for a request id reused on another pool, a spec
+//     without a name, namespace, template, valid replenishment strategy or
+//     hook failure policy, and a spec naming a host that is not seeded;
+//   - INTERNAL for a spec without both heartbeat durations, which the real
+//     server's store rejects;
+//   - ALREADY_EXISTS for CreatePool on an existing pool;
+//   - FAILED_PRECONDITION for DeletePool without force on a pool with a
+//     leased VM.
+//
+// It does not check the template's network fields; muster's configuration
+// validation does. CreatePool provisions no VMs, as the real server
+// replenishes asynchronously. Every HostAdmin RPC except ListHosts returns
+// UNIMPLEMENTED.
+//
+// Tests seed hosts with SeedHost and pools with AddPool, inject faults with FailNext, LoseNext and
 // Stall, observe traffic with Calls and CallCount, and drive events with
 // DeleteVM, Emit and DropSubscribers. The server runs on any listener via
 // Serve, or on an in-process bufconn via ServeBufconn.
@@ -28,7 +42,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -46,6 +59,9 @@ type Pool struct {
 	// Host is reported on every claim from this pool. Nil means
 	// {Name: "host-a", Address: "127.0.0.1:9090"}.
 	Host *poolmgrv1alpha1.HostInfo
+	// Spec, when set, is what GetPool and ListPools return. Nil means a
+	// spec with only the name, namespace and heartbeat durations.
+	Spec *poolmgrv1alpha1.PoolSpec
 }
 
 // Call is one recorded RPC.
@@ -105,8 +121,10 @@ func (sub *subscriber) pop() []*poolmgrv1alpha1.Event {
 // Server is the fake. Use New.
 type Server struct {
 	poolmgrv1alpha1.UnimplementedPoolAdminServer
+	poolmgrv1alpha1.UnimplementedHostAdminServer
 
 	mu          sync.Mutex
+	hosts       map[string]Host
 	pools       map[poolKey]Pool
 	vms         map[string]*vm
 	leases      map[string]*lease
@@ -127,6 +145,7 @@ type Server struct {
 // New returns an empty fake.
 func New() *Server {
 	return &Server{
+		hosts:       map[string]Host{},
 		pools:       map[poolKey]Pool{},
 		vms:         map[string]*vm{},
 		leases:      map[string]*lease{},
@@ -139,11 +158,12 @@ func New() *Server {
 	}
 }
 
-// Register adds the Lease, Events and PoolAdmin services to gs.
+// Register adds the Lease, Events, PoolAdmin and HostAdmin services to gs.
 func (s *Server) Register(gs *grpc.Server) {
 	poolmgrv1alpha1.RegisterLeaseServer(gs, s)
 	poolmgrv1alpha1.RegisterEventsServer(gs, s)
 	poolmgrv1alpha1.RegisterPoolAdminServer(gs, s)
+	poolmgrv1alpha1.RegisterHostAdminServer(gs, s)
 }
 
 // Serve builds a gRPC server with opts plus the fake's interceptors and
@@ -558,21 +578,4 @@ func (s *Server) Subscribe(req *poolmgrv1alpha1.SubscribeRequest, stream grpc.Se
 			return nil
 		}
 	}
-}
-
-// --- PoolAdmin ---
-
-// GetPool implements the one PoolAdmin RPC muster reads.
-func (s *Server) GetPool(_ context.Context, req *poolmgrv1alpha1.GetPoolRequest) (*poolmgrv1alpha1.Pool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	p, key, ok := s.poolOf(req.GetRef())
-	if !ok {
-		return nil, status.Errorf(codes.NotFound, "pool %s/%s not found", key.ns, key.name)
-	}
-	return &poolmgrv1alpha1.Pool{Spec: &poolmgrv1alpha1.PoolSpec{
-		Name: p.Name, Namespace: p.Namespace,
-		HeartbeatInterval:        durationpb.New(p.HeartbeatInterval),
-		HeartbeatExpiryThreshold: durationpb.New(p.HeartbeatExpiryThreshold),
-	}}, nil
 }

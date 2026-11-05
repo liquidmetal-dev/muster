@@ -10,6 +10,9 @@
 //	Events             Events.Subscribe for one pool
 //	VM.Exec            the configured vmsource.Execer (the flintlock client)
 //
+// Admin maps one to one onto HostAdmin.ListHosts and the PoolAdmin
+// ListPools, GetPool, CreatePool, UpdatePool and DeletePool RPCs.
+//
 // Every call has a per-attempt timeout (Config.CallTimeout, default 10 s)
 // and at most Config.MaxAttempts attempts (default 3) with full-jitter
 // backoff. UNAVAILABLE and a per-attempt DEADLINE_EXCEEDED are retried on
@@ -43,6 +46,7 @@ type Source struct {
 	lease  poolmgrv1alpha1.LeaseClient
 	events poolmgrv1alpha1.EventsClient
 	admin  poolmgrv1alpha1.PoolAdminClient
+	hosts  poolmgrv1alpha1.HostAdminClient
 	// sleep waits between retry attempts; tests replace it.
 	sleep func(ctx context.Context, d time.Duration) error
 }
@@ -75,6 +79,7 @@ func New(cfg Config) (*Source, error) {
 		lease:  poolmgrv1alpha1.NewLeaseClient(conn),
 		events: poolmgrv1alpha1.NewEventsClient(conn),
 		admin:  poolmgrv1alpha1.NewPoolAdminClient(conn),
+		hosts:  poolmgrv1alpha1.NewHostAdminClient(conn),
 		sleep:  sleepCtx,
 	}, nil
 }

@@ -23,6 +23,7 @@ type clients struct {
 	lease  poolmgrv1alpha1.LeaseClient
 	events poolmgrv1alpha1.EventsClient
 	admin  poolmgrv1alpha1.PoolAdminClient
+	hosts  poolmgrv1alpha1.HostAdminClient
 }
 
 func start(t *testing.T) (*fakepoolmgr.Server, clients) {
@@ -38,6 +39,7 @@ func start(t *testing.T) (*fakepoolmgr.Server, clients) {
 		lease:  poolmgrv1alpha1.NewLeaseClient(conn),
 		events: poolmgrv1alpha1.NewEventsClient(conn),
 		admin:  poolmgrv1alpha1.NewPoolAdminClient(conn),
+		hosts:  poolmgrv1alpha1.NewHostAdminClient(conn),
 	}
 }
 
@@ -349,8 +351,6 @@ func TestGetPool(t *testing.T) {
 	}
 	_, err = c.admin.GetPool(context.Background(), &poolmgrv1alpha1.GetPoolRequest{Ref: ref("nope", "ns")})
 	wantCode(t, err, codes.NotFound)
-	_, err = c.admin.ListPools(context.Background(), &poolmgrv1alpha1.ListPoolsRequest{})
-	wantCode(t, err, codes.Unimplemented)
 }
 
 func TestAddPoolReplacesSpec(t *testing.T) {
