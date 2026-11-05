@@ -45,3 +45,17 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+
+  release-snapshot:
+    name: Release snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - run: shellcheck deploy/packaging/*.sh hack/release/*.sh
+      - run: goreleaser release --snapshot --clean
+      - run: bash hack/release/package-smoke.sh ubuntu:24.04 dist
+      - run: bash hack/release/package-smoke.sh fedora:45 dist
