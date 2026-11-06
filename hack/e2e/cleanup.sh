@@ -45,6 +45,12 @@ fi
 ip link show muster-e2e-br0 >/dev/null 2>&1 && ip link delete muster-e2e-br0
 docker rm -f muster-e2e-registry >/dev/null 2>&1
 
+if [ -f /etc/udev/rules.d/99-muster-e2e-kvm.rules ]; then
+  rm -f /etc/udev/rules.d/99-muster-e2e-kvm.rules
+  # Only an add event makes udev apply the default mode again.
+  udevadm control --reload-rules && udevadm trigger --action=add --name-match=kvm && udevadm settle
+fi
+
 if [ "$status" = 0 ]; then
   rm -rf "$lib" "$run" /etc/muster-e2e
 fi

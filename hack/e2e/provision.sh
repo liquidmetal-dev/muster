@@ -50,7 +50,8 @@ if [ ! -c /dev/kvm ] || [ "$(stat -c %a /dev/kvm)" != 666 ]; then
   echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
     >/etc/udev/rules.d/99-muster-e2e-kvm.rules
   udevadm control --reload-rules
-  udevadm trigger --name-match=kvm
+  udevadm trigger --action=add --name-match=kvm
+  udevadm settle
 fi
 [ -c /dev/kvm ] || die "/dev/kvm is not a character device"
 

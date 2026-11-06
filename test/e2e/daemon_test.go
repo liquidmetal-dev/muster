@@ -56,7 +56,12 @@ func startDaemon(name, logDir, pidDir string, env []string, args ...string) (*da
 	pidFile := ""
 	if pidDir != "" {
 		pidFile = filepath.Join(pidDir, name+".pid")
-		_ = os.WriteFile(pidFile, []byte(fmt.Sprint(cmd.Process.Pid)), 0o600)
+		if err := os.WriteFile(pidFile, []byte(fmt.Sprint(cmd.Process.Pid)), 0o600); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			_ = logFile.Close()
+			return nil, fmt.Errorf("%s: write pidfile for cleanup.sh: %w", name, err)
+		}
 	}
 	d := &daemon{name: name, logPath: logPath, cmd: cmd, done: make(chan struct{})}
 	go func() {
