@@ -142,7 +142,9 @@ before the log shows `runner busy`.
 - `time` shows that the stop took more than 10 seconds. This proves that musterd waited for a
   busy session, because the log line also appears when no session is busy. If the stop took
   less than 10 seconds, the first job ended before the stop: do the scenario again.
-- During the stop, the log shows no new `runner online` line.
+- During the stop, the log shows no new `runner online` line. On the **Advanced** page of the
+  GitHub App settings, the `queued` delivery of the second job failed, at a time before
+  `systemctl stop` returned. This proves that the second job was queued during the stop.
 - After the start and the redelivery, the second job gets a runner and completes with
   `success`.
 

@@ -53,8 +53,9 @@ own, because nothing sends it heartbeats.
 
 ### Jobs queued during the upgrade
 
-musterd keeps a job that GitHub queues during the drain or while musterd is stopped only in
-memory, and it forgets the job when it exits. GitHub has no endpoint that lists queued jobs.
+musterd starts no session for a job that GitHub queues during the drain or while musterd is
+stopped. The intakes stop at SIGTERM, so a webhook delivery in that time fails. GitHub has no
+endpoint that lists queued jobs, so the next start does not find these jobs by itself.
 
 - With the polling intake on, the next start finds the queued jobs of the repositories in
   `github.poll.repos`.
@@ -115,11 +116,21 @@ session before you change the configuration:
      `orphan pool still has leased VMs; a later start prunes it`. Do this step again later for
      that pool.
    - **Scope change.** A plain start. The pool is still configured, so it is not an orphan.
-7. In the scope that the pool used (its old scope after a scope change), list the runners
-   whose names start with `muster-<namespace>-<pool>-`, and delete the ones that are left. Do
-   this also when another pool shares that scope. musterd lists runners only in the scopes of
-   the configured pools, and it deletes a runner only for a configured pool or for a pool that a
-   lease names.
+7. In the scope that the pool used (its old scope after a scope change), delete the runners of
+   the pool that are left. Do this also when another pool shares that scope. musterd lists
+   runners only in the scopes of the configured pools, and it deletes a runner only for a
+   configured pool or for a pool that a lease names.
+
+   A runner name of the pool is `muster-<namespace>-<pool>-` and a 12-character session id of
+   the characters `a-z` and `2-7`. Match the full name, not only its start: the start alone also
+   matches the runners of a pool such as `<pool>-x`. For a repository scope (use
+   `orgs/<org>` for an organization scope):
+
+   ```sh
+   gh api --paginate repos/<owner>/<repo>/actions/runners \
+     -q '.runners[] | select(.name | test("^muster-<namespace>-<pool>-[a-z2-7]{12}$")) | "\(.id) \(.name)"'
+   gh api -X DELETE repos/<owner>/<repo>/actions/runners/<id>
+   ```
 
 ## Two instances
 
