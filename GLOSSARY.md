@@ -120,6 +120,11 @@ How long muster waits after SIGTERM for busy sessions to finish before it exits.
 still active at exit are left running, to be adopted by the next start.
 _Avoid_: Drain timeout
 
+**Drain**:
+The state in which musterd starts no new sessions while its active sessions run on until they
+end or the shutdown grace expires.
+_Avoid_: Pause, cordon, quiesce
+
 ## Images
 
 **Runner image**:
@@ -134,3 +139,10 @@ _Avoid_: Image spec, image requirements
 **Image variant**:
 One of the reference runner images that the repository builds: `minimal`, `full` or `e2e`.
 _Avoid_: Flavour, edition
+
+## Testing
+
+**E2e scenario**:
+One end-to-end test that drives queued jobs from the fake GitHub through a real musterd,
+battery and flintlock on one host, and checks the sessions, leases and microVMs that result.
+_Avoid_: Test case, flow, acceptance test (that names the real-GitHub suite)
