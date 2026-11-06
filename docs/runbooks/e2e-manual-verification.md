@@ -118,6 +118,11 @@ jobs:
 **Purpose:** the [upgrade procedure](../operations/upgrade.md#upgrade-procedure) keeps a busy
 job that ends within `shutdown_grace`, and starts no new session during the stop.
 
+This scenario needs the webhook intake, as the quick start configures it. The `in_progress`
+delivery marks the session busy at once. With the polling intake only, musterd learns that a
+runner is busy from the runner poll, which runs every 60 seconds, so the 25-second job can end
+before the log shows `runner busy`.
+
 1. Start a job that runs for 25 seconds, which is shorter than the default `shutdown_grace` of
    30 seconds: `gh workflow run muster-e2e.yml -R "$REPO" -f sleep=25`.
 2. As soon as the log shows `runner busy`, stop musterd and time the stop:
@@ -126,8 +131,9 @@ job that ends within `shutdown_grace`, and starts no new session during the stop
 4. When `systemctl stop` returns, replace the binary or the package with the build under test.
    Then start musterd: `sudo systemctl start musterd`.
 5. In the GitHub App settings, on the **Advanced** page, redeliver the `workflow_job` delivery
-   with the action `queued` for the second job. Skip this step if the polling intake is on
+   with the action `queued` for the second job
    ([jobs queued during the upgrade](../operations/upgrade.md#jobs-queued-during-the-upgrade)).
+   If the polling intake is also on and the second job already has a runner, skip this step.
 
 **Expected:**
 
