@@ -145,7 +145,7 @@ before the log shows `runner busy`.
 - During the stop, the log shows no new `runner online` line. On the **Advanced** page of the
   GitHub App settings, the `queued` delivery of the second job has a time before
   `systemctl stop` returned. This proves that the second job was queued during the stop. The
-  delivery usually failed, but it can show a success if it arrived while the listener closed.
+  delivery usually failed, but it can show a success if it arrived while the webhook intake stopped.
 - After the start and the redelivery, the second job gets a runner and completes with
   `success`.
 
@@ -286,7 +286,8 @@ with the v0.1.0 binaries.
 - `poolmgrctl pool get --name e2e-remove --namespace "$NS"` reports that the pool does not
   exist.
 - `systemctl cat musterd` shows no `prune-pools.conf` after you remove it.
-- `runners` lists no `muster-$NS-e2e-remove-` runner.
+- `runners` lists no runner whose name is `muster-$NS-e2e-remove-` and a 12-character session
+  id.
 
 - [ ] Pass
 

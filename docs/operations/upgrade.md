@@ -58,7 +58,7 @@ own, because nothing sends it heartbeats.
 
 musterd starts no session for a job that GitHub queues during the drain or while musterd is
 stopped. The intakes stop at SIGTERM. A webhook delivery in that time fails, or, if it arrives
-while the listener closes, musterd accepts it but makes no session. GitHub has no
+while the webhook intake stops, musterd accepts it but makes no session. GitHub has no
 endpoint that lists queued jobs, so the next start does not find these jobs by itself.
 
 - With the polling intake on, the next start finds the queued jobs of the repositories in
