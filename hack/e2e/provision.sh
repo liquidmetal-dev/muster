@@ -44,7 +44,7 @@ mod_battery="$(cd "$repo" && go list -m -f '{{.Version}}' github.com/liquidmetal
 [ "$mod_battery" = "$BATTERY_VERSION" ] ||
   die "versions.env BATTERY_VERSION $BATTERY_VERSION differs from go.mod $mod_battery"
 
-"$here/cleanup.sh"
+"$here/cleanup.sh" || die "cleanup.sh could not remove the state of an earlier run"
 
 if [ ! -c /dev/kvm ] || [ "$(stat -c %a /dev/kvm)" != 666 ]; then
   echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \

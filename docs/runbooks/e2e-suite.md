@@ -18,7 +18,7 @@ The [ADR](../adr/2026-11-06-e2e-infrastructure.md) gives the reasons for this de
 
 ```sh
 sudo env "PATH=$PATH" hack/e2e/provision.sh
-sudo env "PATH=$PATH" "HOME=$HOME" GOFLAGS=-buildvcs=false \
+sudo env "PATH=$PATH" GOFLAGS=-buildvcs=false \
   go test -tags e2e -timeout 30m -count=1 -v ./test/e2e
 sudo hack/e2e/cleanup.sh
 ```
@@ -29,6 +29,8 @@ sudo hack/e2e/cleanup.sh
 - It pushes the `e2e` image to a registry container on `localhost:5000`.
 - It writes `/run/muster-e2e/env`, which the suite reads.
 - It does not touch the host's containerd.
+
+`sudo` gives root its own `HOME`, so root's go caches stay out of yours.
 
 When `/run/muster-e2e/env` is missing, the suite prints a message and passes. Set
 `E2E_REQUIRED=1` to make it fail instead. The workflow does this.

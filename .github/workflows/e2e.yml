@@ -23,12 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      # The runner image builds and the thin-pool need more disk than the runner leaves free.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - name: Provision the host
         run: sudo env "PATH=$PATH" hack/e2e/provision.sh
       - name: Run the e2e suite
         # Root runs go in a checkout that the runner user owns, so git refuses the VCS stamp.
         run: >-
-          sudo env "PATH=$PATH" "HOME=$HOME" GOFLAGS=-buildvcs=false E2E_REQUIRED=1
+          sudo env "PATH=$PATH" GOFLAGS=-buildvcs=false E2E_REQUIRED=1
           "E2E_LOG_DIR=$RUNNER_TEMP/e2e-logs"
           go test -tags e2e -timeout 30m -count=1 -v ./test/e2e
       - name: Make the daemon logs readable

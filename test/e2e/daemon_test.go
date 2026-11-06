@@ -53,12 +53,17 @@ func startDaemon(name, logDir, pidDir string, env []string, args ...string) (*da
 		_ = logFile.Close()
 		return nil, fmt.Errorf("start %s: %w", name, err)
 	}
+	pidFile := ""
 	if pidDir != "" {
-		_ = os.WriteFile(filepath.Join(pidDir, name+".pid"), []byte(fmt.Sprint(cmd.Process.Pid)), 0o600)
+		pidFile = filepath.Join(pidDir, name+".pid")
+		_ = os.WriteFile(pidFile, []byte(fmt.Sprint(cmd.Process.Pid)), 0o600)
 	}
 	d := &daemon{name: name, logPath: logPath, cmd: cmd, done: make(chan struct{})}
 	go func() {
 		d.err = cmd.Wait()
+		if pidFile != "" {
+			_ = os.Remove(pidFile)
+		}
 		_ = logFile.Close()
 		close(d.done)
 	}()
@@ -85,6 +90,9 @@ func (d *daemon) Stop(sig os.Signal, timeout time.Duration) error {
 		return d.Kill()
 	}
 }
+
+// reported marks an exit the test has already reported, so later waits do not fail on it.
+func (d *daemon) reported() { d.expected.Store(true) }
 
 // Kill sends SIGKILL and waits for the exit.
 func (d *daemon) Kill() error {
@@ -139,11 +147,22 @@ func unexpectedExit() error {
 	daemonsMu.Lock()
 	defer daemonsMu.Unlock()
 	for _, d := range daemons {
-		if exited, err := d.Exited(); exited && !d.expected.Load() {
-			return fmt.Errorf("%s exited unexpectedly (%w); log %s:\n%s", d.name, err, d.logPath, d.LogTail(50))
+		if exited, _ := d.Exited(); exited && !d.expected.Load() {
+			return fmt.Errorf("%s exited unexpectedly (%s); log %s:\n%s", d.name, d.cmd.ProcessState, d.logPath, d.LogTail(50))
 		}
 	}
 	return nil
+}
+
+// rpcFailure is the error for a failed call to a daemon. A daemon that has just died fails
+// its RPCs before its exit is seen, so it waits a moment for the exit and names it.
+func rpcFailure(op string, err error) error {
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if exitErr := unexpectedExit(); exitErr != nil {
+			return fmt.Errorf("%s: %w; %v", op, err, exitErr) //nolint:errorlint // the exit is context, not a cause
+		}
+	}
+	return fmt.Errorf("%s: %w", op, err)
 }
 
 // lastDaemon returns the most recently started daemon with the name, or nil.

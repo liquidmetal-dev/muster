@@ -170,9 +170,9 @@ func newScenario(t *testing.T, opts scenarioOpts) *scenario {
 	}
 
 	t.Cleanup(func() {
+		defer s.GH.Close()
+		defer func() { _ = srv.Close() }()
 		s.teardown()
-		_ = srv.Close()
-		s.GH.Close()
 	})
 	return s
 }
@@ -219,7 +219,7 @@ func (s *scenario) Leases() []*poolmgrv1alpha1.LeaseRecord {
 		PoolRef: &poolmgrv1alpha1.PoolRef{Name: s.Pool, Namespace: s.Namespace},
 	})
 	if err != nil {
-		s.t.Fatalf("ListLeases: %v", err)
+		s.t.Fatal(rpcFailure("ListLeases", err))
 	}
 	return resp.GetLeases()
 }
@@ -232,7 +232,7 @@ func (s *scenario) MicroVMs() []*flintlocktypes.MicroVM {
 	defer cancel()
 	resp, err := infra.microvms.ListMicroVMs(ctx, &flintlockv1.ListMicroVMsRequest{Namespace: s.Namespace})
 	if err != nil {
-		s.t.Fatalf("ListMicroVMs: %v", err)
+		s.t.Fatal(rpcFailure("ListMicroVMs", err))
 	}
 	return resp.GetMicrovm()
 }
@@ -314,8 +314,14 @@ func (s *scenario) QueueJob() fakegithub.Job {
 // teardown stops musterd, then removes the scenario's pool and checks nothing is left.
 func (s *scenario) teardown() {
 	t := s.t
-	if s.Musterd != nil && s.Musterd.running() {
-		_ = s.Musterd.Stop(syscall.SIGTERM, s.opts.ShutdownGrace+30*time.Second)
+	if s.Musterd != nil {
+		if s.Musterd.running() {
+			_ = s.Musterd.Stop(syscall.SIGTERM, s.opts.ShutdownGrace+30*time.Second)
+		} else if !s.Musterd.expected.Load() {
+			// Report the crash here, once, so later scenarios do not fail on it.
+			t.Errorf("teardown: musterd exited unexpectedly (%s); log %s", s.Musterd.cmd.ProcessState, s.Musterd.logPath)
+			s.Musterd.reported()
+		}
 	}
 	if !poll(2*time.Minute, func() bool { return len(s.Leases()) == 0 }) {
 		t.Errorf("teardown: leases left in %s: %v; daemon logs in %s", s.Namespace, s.Leases(), infra.logDir)
