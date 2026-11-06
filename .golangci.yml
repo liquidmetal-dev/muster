@@ -21,3 +21,5 @@ formatters:
 
 run:
   timeout: 5m
+  build-tags:
+    - e2e
