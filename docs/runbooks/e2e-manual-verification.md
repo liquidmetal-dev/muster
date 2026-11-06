@@ -1,8 +1,9 @@
 # End-to-end manual verification runbook
 
 This runbook checks muster against a real flintlock host, a real battery and a real GitHub
-repository. The automated tests use fakes; this runbook is the check that the parts work
-together. Each scenario has its steps, the expected result and a box to tick.
+repository. The unit tests use fakes. The [e2e suite](e2e-suite.md) runs the real flintlock and
+battery with the fake GitHub. This runbook is the check that the parts work together with
+the real GitHub. Each scenario has its steps, the expected result and a box to tick.
 
 ## Status of this runbook
 

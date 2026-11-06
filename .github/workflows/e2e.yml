@@ -1,0 +1,44 @@
+name: E2E
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: e2e
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run/e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      - name: Provision the host
+        run: sudo env "PATH=$PATH" hack/e2e/provision.sh
+      - name: Run the e2e suite
+        # Root runs go in a checkout that the runner user owns, so git refuses the VCS stamp.
+        run: >-
+          sudo env "PATH=$PATH" "HOME=$HOME" GOFLAGS=-buildvcs=false E2E_REQUIRED=1
+          "E2E_LOG_DIR=$RUNNER_TEMP/e2e-logs"
+          go test -tags e2e -timeout 30m -count=1 -v ./test/e2e
+      - name: Make the daemon logs readable
+        if: failure()
+        run: sudo chmod -R a+rX "$RUNNER_TEMP/e2e-logs"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-logs
+          path: ${{ runner.temp }}/e2e-logs
+      - name: Clean up
+        if: always()
+        run: sudo hack/e2e/cleanup.sh
