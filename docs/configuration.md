@@ -141,10 +141,13 @@ sure that GHES can reach the webhook URL.
 | `battery.addr` | host:port | required | The poolmgrd gRPC address. |
 | `battery.namespace` | DNS label | `muster` | The [namespace](../GLOSSARY.md#pools) of this instance. Two instances that share a battery must use different namespaces. See [upgrade](operations/upgrade.md#two-instances). |
 | `battery.tls` | [client TLS](#tls-blocks) | TLS with the system CAs | |
+| `battery.token_file` | path | | poolmgrd's `basic_auth_token`. Set at most one of `token_file` and `token_env`. |
+| `battery.token_env` | env name | | The same token, from an environment variable. |
 
-musterd does not yet support poolmgrd's `basic_auth_token`. Use TLS, or mutual TLS with
-`battery.tls.cert_file`, to protect the connection.
-[#49](https://github.com/liquidmetal-dev/muster/issues/49) adds the token.
+Set the token when poolmgrd sets `basic_auth_token`. musterd sends the token on each call to
+poolmgrd as `authorization: basic <base64(token)>`, and removes the whitespace around it first.
+Use TLS to protect the token. With `battery.tls.insecure`, the token goes in cleartext and
+musterd logs a warning at startup.
 
 ## flintlock
 

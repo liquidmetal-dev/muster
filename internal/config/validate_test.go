@@ -66,6 +66,11 @@ func TestValidateSections(t *testing.T) {
 		}, "github.token_file: set together with token_env"},
 		{"token only ok", func(m map[string]any) { del(m, "github.app"); set(m, "github.token_env", "T") }, ""},
 		{"token_file only ok", func(m map[string]any) { del(m, "github.app"); set(m, "github.token_file", "/t") }, ""},
+		{"battery token both", func(m map[string]any) {
+			set(m, "battery.token_file", "/t")
+			set(m, "battery.token_env", "T")
+		}, "battery.token_file: set together with token_env"},
+		{"battery token env only ok", func(m map[string]any) { set(m, "battery.token_env", "T") }, ""},
 		{"app_id zero", func(m map[string]any) { set(m, "github.app.app_id", 0) }, "github.app.app_id: must be positive"},
 		{"installation_id negative", func(m map[string]any) { set(m, "github.app.installation_id", -1) }, "github.app.installation_id: must be positive"},
 		{"two key sources", func(m map[string]any) { set(m, "github.app.private_key_file", "/k") }, "github.app: exactly one of private_key_file or private_key_env"},

@@ -137,6 +137,9 @@ func validateBattery(cfg *Config, errs *errorList) {
 	if err := cfg.Battery.TLS.Validate(); err != nil {
 		errs.addErr("battery.tls", err)
 	}
+	if cfg.Battery.TokenFile != "" && cfg.Battery.TokenEnv != "" {
+		errs.add("battery.token_file", "set together with token_env; set exactly one")
+	}
 }
 
 func validateFlintlock(cfg *Config, errs *errorList) {

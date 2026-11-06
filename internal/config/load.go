@@ -47,6 +47,9 @@ func resolve(cfg *Config) error {
 			errs.add(path, "not a PEM-encoded RSA private key")
 		}
 	}
+	if b := &cfg.Battery; b.TokenFile != "" || b.TokenEnv != "" {
+		resolveSecret(&errs, &b.Token, "battery.token_file", b.TokenFile, "battery.token_env", b.TokenEnv)
+	}
 
 	if cfg.Listen != nil && cfg.Listen.TLS != nil {
 		probeTLS(&errs, "listen.tls", cfg.Listen.TLS)

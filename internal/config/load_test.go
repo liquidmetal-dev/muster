@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -182,5 +183,71 @@ func TestLoadCollectsResolveErrors(t *testing.T) {
 	}
 	if fe.Path == "" {
 		t.Fatalf("FieldError.Path is empty: %v", fe)
+	}
+}
+
+func TestLoadResolvesBatteryTokenFile(t *testing.T) {
+	setSecrets(t)
+	tokenFile := filepath.Join(t.TempDir(), "battery-token")
+	if err := os.WriteFile(tokenFile, []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(writeFixture(t, func(m map[string]any) {
+		set(m, "battery.token_file", tokenFile)
+	}))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := string(cfg.Battery.Token.Value()); got != "s3cret" {
+		t.Errorf("Battery.Token = %q, want s3cret", got)
+	}
+	if s := fmt.Sprintf("%+v", cfg.Battery); strings.Contains(s, "s3cret") {
+		t.Errorf("Battery prints the token: %s", s)
+	}
+}
+
+func TestLoadResolvesBatteryTokenEnv(t *testing.T) {
+	setSecrets(t)
+	t.Setenv("MUSTER_BATTERY_TOKEN", "s3cret")
+	cfg, err := config.Load(writeFixture(t, func(m map[string]any) {
+		set(m, "battery.token_env", "MUSTER_BATTERY_TOKEN")
+	}))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := string(cfg.Battery.Token.Value()); got != "s3cret" {
+		t.Errorf("Battery.Token = %q, want s3cret", got)
+	}
+}
+
+func TestLoadBatteryTokenErrors(t *testing.T) {
+	dir := t.TempDir()
+	blank := filepath.Join(dir, "blank")
+	if err := os.WriteFile(blank, []byte(" \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, key, value, want string
+	}{
+		{"env unset", "battery.token_env", "MUSTER_BATTERY_TOKEN_UNSET", "battery.token_env: environment variable MUSTER_BATTERY_TOKEN_UNSET is not set"},
+		{"file blank", "battery.token_file", blank, "battery.token_file: secret is empty"},
+		{"file missing", "battery.token_file", filepath.Join(dir, "missing"), "battery.token_file: read "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setSecrets(t)
+			_, err := config.Load(writeFixture(t, func(m map[string]any) { set(m, tc.key, tc.value) }))
+			wantErr(t, err, tc.want)
+		})
+	}
+}
+
+func TestLoadWithoutBatteryToken(t *testing.T) {
+	setSecrets(t)
+	cfg, err := config.Load(writeFixture(t, nil))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Battery.Token.IsSet() {
+		t.Error("Battery.Token is set without a source")
 	}
 }
