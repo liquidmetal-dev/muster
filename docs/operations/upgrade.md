@@ -40,21 +40,86 @@ own, because nothing sends it heartbeats.
 
 ## Upgrade procedure
 
-1. Run `musterctl drain --wait`. musterd stops making new sessions and waits until the busy
-   sessions end. (`musterctl drain` comes with the gRPC API.)
-2. Stop musterd.
-3. Replace the binary or the image.
-4. Start musterd. It adopts the sessions that are still in flight.
+1. Stop musterd: `sudo systemctl stop musterd`, or `docker stop -t 60 musterd` for a container.
+   SIGTERM drains musterd, as [What SIGTERM does](#what-sigterm-does) describes: it starts no
+   new session and waits for busy sessions for at most `shutdown_grace`. The `-t` value must be
+   greater than `shutdown_grace`, because the default `docker stop` timeout is 10 seconds.
+2. Replace the binary, the package or the image.
+3. Start musterd. It adopts the sessions that are still in flight.
 
-A plain restart without step 1 is also safe: the sessions that are still in flight are adopted.
-The drain only makes sure that no new session starts during the upgrade.
+> From v0.2.0 ([#24](https://github.com/liquidmetal-dev/muster/issues/24)), `musterctl drain
+> --wait` stops new sessions and waits for the busy sessions before you stop musterd, with no
+> limit from `shutdown_grace`.
+
+### Jobs queued during the upgrade
+
+musterd keeps a job that GitHub queues during the drain or while musterd is stopped only in
+memory, and it forgets the job when it exits. GitHub has no endpoint that lists queued jobs.
+
+- With the polling intake on, the next start finds the queued jobs of the repositories in
+  `github.poll.repos`.
+- With the webhook intake only, or for a repository that `github.poll.repos` does not list,
+  redeliver the `workflow_job` delivery with the action `queued` of each such job. Use the
+  **Advanced** page of the GitHub App settings. You can also turn on the polling intake next to
+  the webhook intake.
+
+[#57](https://github.com/liquidmetal-dev/muster/issues/57) tracks a fix that needs no manual
+step.
 
 ## Removing a pool or changing its scope
 
-Drain the pool first, and wait until its sessions have ended. musterd lists runners only in the
-scopes of the pools that are configured now, and it deletes a runner of a removed pool only
-when a lease of that pool is still there. Other runners of a removed pool stay until you delete
-them.
+musterd reads its configuration only at startup, and v0.1.0 has no drain for one pool. When
+musterd starts and a lease names a pool that is no longer configured, it releases the lease.
+If the job of that session still runs, the job loses its VM
+([#56](https://github.com/liquidmetal-dev/muster/issues/56)). So make sure that the pool has no
+session before you change the configuration:
+
+1. Move the workflows that use the pool's labels to another pool, or pause them. Cancel their
+   runs that are still queued: a moved workflow does not move a job that is already queued.
+2. Wait until the metric `muster_sessions{pool="<pool>"}` is 0 for every `state`
+   ([metrics](observability.md#metrics)).
+3. Stop musterd.
+4. While musterd is stopped, check that battery has no lease of the pool:
+
+   ```sh
+   poolmgrctl lease list --pool <pool> --namespace <namespace>
+   ```
+
+   musterd cannot make a session while it is stopped, so this check is final. If a lease is
+   there, a job got a session after step 2. Start musterd with the configuration unchanged (it
+   adopts the session), and do steps 2 to 4 again.
+5. Remove the pool from the configuration, or change its scope.
+6. Start musterd.
+   - **Removal only.** Start musterd once with `-prune-pools` to delete the battery pool,
+     which is now an orphan pool. Use a drop-in file of its own, and then delete only that
+     file:
+
+     ```sh
+     sudo mkdir -p /etc/systemd/system/musterd.service.d
+     printf '[Service]\nExecStart=\nExecStart=/usr/bin/musterd -config /etc/muster/musterd.json -prune-pools\n' |
+       sudo tee /etc/systemd/system/musterd.service.d/prune-pools.conf
+     sudo systemctl daemon-reload
+     sudo systemctl start musterd
+     journalctl -u musterd | grep 'orphan pool'
+     sudo rm /etc/systemd/system/musterd.service.d/prune-pools.conf
+     sudo systemctl daemon-reload
+     ```
+
+     The empty `ExecStart=` line is necessary: without it, systemd adds a second command. Do
+     not use `systemctl revert`, because it also deletes your own drop-in files.
+     `-prune-pools` acts only at startup, so the next start, without the file, does not prune.
+     For a container, add `-prune-pools` after the image name for one start.
+
+     `-prune-pools` deletes every orphan pool in the namespace, not only this one. A pool that
+     still has leased VMs stays, and the log shows
+     `orphan pool still has leased VMs; a later start prunes it`. Do this step again later for
+     that pool.
+   - **Scope change.** A plain start. The pool is still configured, so it is not an orphan.
+7. In the scope that the pool used (its old scope after a scope change), list the runners
+   whose names start with `muster-<namespace>-<pool>-`, and delete the ones that are left. Do
+   this also when another pool shares that scope. musterd lists runners only in the scopes of
+   the configured pools, and it deletes a runner only for a configured pool or for a pool that a
+   lease names.
 
 ## Two instances
 
