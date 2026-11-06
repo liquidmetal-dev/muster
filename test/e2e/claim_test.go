@@ -3,23 +3,11 @@
 package e2e
 
 import (
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/liquidmetal-dev/muster/internal/fakegithub"
 )
-
-// sessionRunner returns the fake's runner named for the scenario's pool, if there is one.
-func (s *scenario) sessionRunner() (fakegithub.Runner, bool) {
-	prefix := "muster-" + s.Namespace + "-" + s.Pool + "-"
-	for _, r := range s.GH.Runners() {
-		if strings.HasPrefix(r.Name, prefix) && len(r.Name) == len(prefix)+12 {
-			return r, true
-		}
-	}
-	return fakegithub.Runner{}, false
-}
 
 func TestClaimExecRegister(t *testing.T) {
 	s := newScenario(t, scenarioOpts{PoolSize: 1, DefaultBehavior: fakegithub.Behavior{RunFor: 20 * time.Second}})
@@ -41,7 +29,7 @@ func TestClaimExecRegister(t *testing.T) {
 	waitFor(t, 90*time.Second, "the job running on the session's runner", func() bool {
 		r, _ := s.sessionRunner()
 		j := s.Job(job.ID)
-		return j.Status == "in_progress" && j.RunnerName == r.Name
+		return j.Status == jobInProgress && j.RunnerName == r.Name
 	})
 }
 
@@ -52,10 +40,7 @@ func TestCompletionReleases(t *testing.T) {
 	job := s.QueueJob()
 	waitFor(t, 90*time.Second, "one lease", func() bool { return len(s.Leases()) == 1 })
 	vmUID := s.Leases()[0].GetVmUid()
-	waitFor(t, 2*time.Minute, "the job completed with success", func() bool {
-		j := s.Job(job.ID)
-		return j.Status == "completed" && j.Conclusion == "success"
-	})
+	waitFor(t, 2*time.Minute, "the job completed with success", func() bool { return s.JobSucceeded(job.ID) })
 	waitFor(t, 45*time.Second, "the lease released, the VM deleted and the runner gone", func() bool {
 		_, runner := s.sessionRunner()
 		return len(s.Leases()) == 0 && !s.HasMicroVM(vmUID) && !runner

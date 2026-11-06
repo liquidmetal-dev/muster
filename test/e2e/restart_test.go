@@ -14,7 +14,7 @@ func TestRestartAdopts(t *testing.T) {
 	s.StartMusterd()
 
 	job := s.QueueJob()
-	waitFor(t, 2*time.Minute, "the job in progress", func() bool { return s.Job(job.ID).Status == "in_progress" })
+	waitFor(t, 2*time.Minute, "the job in progress", func() bool { return s.Job(job.ID).Status == jobInProgress })
 	leases := s.Leases()
 	if len(leases) != 1 {
 		t.Fatalf("leases = %d, want 1", len(leases))
@@ -40,8 +40,7 @@ func TestRestartAdopts(t *testing.T) {
 	}
 
 	waitFor(t, 3*time.Minute, "the job completed, the lease released and the VM deleted", func() bool {
-		j := s.Job(job.ID)
-		return j.Status == "completed" && j.Conclusion == "success" && len(s.Leases()) == 0 && !s.HasMicroVM(vmUID)
+		return s.JobSucceeded(job.ID) && len(s.Leases()) == 0 && !s.HasMicroVM(vmUID)
 	})
 	if j := s.Job(job.ID); j.RunnerName != runnerName {
 		t.Fatalf("job ran on %s after restart, want %s", j.RunnerName, runnerName)

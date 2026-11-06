@@ -27,7 +27,7 @@ func TestExhaustedBackoffRecovers(t *testing.T) {
 	})
 	waitFor(t, 5*time.Minute, "all three jobs completed with success", func() bool {
 		for _, j := range jobs {
-			if j := s.Job(j.ID); j.Status != "completed" || j.Conclusion != "success" {
+			if !s.JobSucceeded(j.ID) {
 				return false
 			}
 		}

@@ -119,19 +119,24 @@ func (d *daemon) Wait(timeout time.Duration) (int, error) {
 	}
 }
 
-// Exited reports whether the process has exited, and the error Wait returned.
-func (d *daemon) Exited() (bool, error) {
+// Exited reports whether the process has exited.
+func (d *daemon) Exited() bool {
 	select {
 	case <-d.done:
-		return true, d.err
+		return true
 	default:
-		return false, nil
+		return false
 	}
 }
 
-func (d *daemon) running() bool {
-	exited, _ := d.Exited()
-	return !exited
+func (d *daemon) running() bool { return !d.Exited() }
+
+// unexpectedErr describes an exit that the test did not ask for, or returns nil.
+func (d *daemon) unexpectedErr() error {
+	if !d.Exited() || d.expected.Load() {
+		return nil
+	}
+	return fmt.Errorf("%s exited unexpectedly (%s); log %s:\n%s", d.name, d.cmd.ProcessState, d.logPath, d.LogTail(50))
 }
 
 // LogTail returns the last n lines of the daemon's log.
@@ -152,8 +157,8 @@ func unexpectedExit() error {
 	daemonsMu.Lock()
 	defer daemonsMu.Unlock()
 	for _, d := range daemons {
-		if exited, _ := d.Exited(); exited && !d.expected.Load() {
-			return fmt.Errorf("%s exited unexpectedly (%s); log %s:\n%s", d.name, d.cmd.ProcessState, d.logPath, d.LogTail(50))
+		if err := d.unexpectedErr(); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -31,8 +31,7 @@ func TestRunnerTakesDifferentJob(t *testing.T) {
 	b := s.QueueJob()
 
 	waitFor(t, 3*time.Minute, "B completed with success on the first runner", func() bool {
-		j := s.Job(b.ID)
-		return j.Status == "completed" && j.Conclusion == "success" && j.RunnerName == runner.Name
+		return s.JobSucceeded(b.ID) && s.Job(b.ID).RunnerName == runner.Name
 	})
 	waitFor(t, 2*time.Minute, "the lease released", func() bool { return len(s.Leases()) == 0 })
 	// The duration histogram counts successful claims only, not retries of an exhausted pool.

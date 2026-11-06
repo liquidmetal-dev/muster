@@ -31,7 +31,7 @@ func TestDrainStopsNewSessions(t *testing.T) {
 
 	a, c := s.QueueJob(), s.QueueJob()
 	waitFor(t, 2*time.Minute, "both jobs in progress on two leases", func() bool {
-		return s.Job(a.ID).Status == "in_progress" && s.Job(c.ID).Status == "in_progress" && len(s.Leases()) == 2
+		return s.Job(a.ID).Status == jobInProgress && s.Job(c.ID).Status == jobInProgress && len(s.Leases()) == 2
 	})
 	first := map[string]bool{}
 	for _, l := range s.Leases() {
@@ -56,7 +56,7 @@ func TestDrainStopsNewSessions(t *testing.T) {
 
 	// The runners take A and C in either order; the first to finish frees capacity while the
 	// other keeps musterd in its shutdown grace.
-	done := func(j fakegithub.Job) bool { return s.Job(j.ID).Status == "completed" }
+	done := func(j fakegithub.Job) bool { return s.Job(j.ID).Status == jobCompleted }
 	waitFor(t, 2*time.Minute, "one of A and C completed", func() bool { return done(a) || done(c) })
 	// Claims retried while battery readied the warm VMs, so count from here.
 	attempts := map[string]string{"pool": s.Pool}
@@ -70,7 +70,7 @@ func TestDrainStopsNewSessions(t *testing.T) {
 				return fmt.Errorf("new lease %s", l.GetLeaseId())
 			}
 		}
-		if st := s.Job(b.ID).Status; st != "queued" {
+		if st := s.Job(b.ID).Status; st != jobQueued {
 			return fmt.Errorf("job B is %s", st)
 		}
 		return nil
@@ -85,7 +85,7 @@ func TestDrainStopsNewSessions(t *testing.T) {
 		t.Fatalf("musterd exit code = %d, want 0", code)
 	}
 	waitFor(t, time.Minute, "no leases", func() bool { return len(s.Leases()) == 0 })
-	if j := s.Job(b.ID); j.Status != "queued" {
+	if j := s.Job(b.ID); j.Status != jobQueued {
 		t.Fatalf("job B status = %s, want queued", j.Status)
 	}
 }

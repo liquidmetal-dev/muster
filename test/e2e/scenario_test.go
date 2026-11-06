@@ -38,10 +38,10 @@ func TestHarness(t *testing.T) {
 		vms := s.MicroVMs()
 		return len(vms) == 1 && vms[0].GetStatus().GetState() == flintlocktypes.MicroVMStatus_CREATED && len(s.Leases()) == 0
 	})
-	if got := s.Metric("muster_ready", map[string]string{"check": "battery"}); got != 1 {
-		t.Fatalf("muster_ready{check=battery} = %v, want 1", got)
-	}
 	battery, github := s.Metric("muster_ready", map[string]string{"check": "battery"}), s.Metric("muster_ready", map[string]string{"check": "github"})
+	if battery != 1 {
+		t.Fatalf("muster_ready{check=battery} = %v, want 1", battery)
+	}
 	if all := s.Metric("muster_ready", nil); all < battery+github {
 		t.Fatalf("muster_ready summed over check = %v, want at least %v + %v", all, battery, github)
 	}
@@ -49,6 +49,14 @@ func TestHarness(t *testing.T) {
 		t.Fatalf("muster_ready{check=no-such-check} = %v, want 0", none)
 	}
 }
+
+// Job states and the conclusion of the fake GitHub.
+const (
+	jobQueued     = "queued"
+	jobInProgress = "in_progress"
+	jobCompleted  = "completed"
+	jobSuccess    = "success"
+)
 
 const (
 	e2eToken = "ghp_e2e"
@@ -301,6 +309,23 @@ func (s *scenario) Job(id int64) fakegithub.Job {
 	return fakegithub.Job{}
 }
 
+// JobSucceeded reports whether the job completed with success.
+func (s *scenario) JobSucceeded(id int64) bool {
+	j := s.Job(id)
+	return j.Status == jobCompleted && j.Conclusion == jobSuccess
+}
+
+// sessionRunner returns the fake's runner named for the scenario's pool, if there is one.
+func (s *scenario) sessionRunner() (fakegithub.Runner, bool) {
+	prefix := "muster-" + s.Namespace + "-" + s.Pool + "-"
+	for _, r := range s.GH.Runners() {
+		if strings.HasPrefix(r.Name, prefix) && len(r.Name) == len(prefix)+12 {
+			return r, true
+		}
+	}
+	return fakegithub.Runner{}, false
+}
+
 // QueueJob queues a job with the pool's labels.
 func (s *scenario) QueueJob() fakegithub.Job {
 	s.t.Helper()
@@ -317,9 +342,9 @@ func (s *scenario) teardown() {
 	if s.Musterd != nil {
 		if s.Musterd.running() {
 			_ = s.Musterd.Stop(syscall.SIGTERM, s.opts.ShutdownGrace+30*time.Second)
-		} else if !s.Musterd.expected.Load() {
+		} else if err := s.Musterd.unexpectedErr(); err != nil {
 			// Report the crash here, once, so later scenarios do not fail on it.
-			t.Errorf("teardown: musterd exited unexpectedly (%s); log %s", s.Musterd.cmd.ProcessState, s.Musterd.logPath)
+			t.Errorf("teardown: %v", err)
 			s.Musterd.reported()
 		}
 	}
