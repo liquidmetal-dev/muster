@@ -10,6 +10,8 @@ starts.
   runner through flintlock's exec API.
 - A name in battery that is the same as the name in muster's configuration: in
   `pools[].flintlock_hosts`, and in `flintlock.hosts` when the host has its own TLS settings.
+- Space in the devmapper thin-pool, CPU and memory for the pools that use it. See
+  [capacity](capacity.md).
 
 ## Register a host
 
