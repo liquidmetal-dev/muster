@@ -119,12 +119,16 @@ func (d *daemon) build() error {
 	if d.execer, err = flintlock.NewExecer(cfg.Flintlock, flintlock.WithLogger(l)); err != nil {
 		return fmt.Errorf("startup: flintlock: %w", err)
 	}
+	if cfg.Battery.Token.IsSet() && cfg.Battery.TLS.Insecure {
+		l.Warn("battery token is sent in plaintext because battery.tls.insecure is set", "addr", cfg.Battery.Addr)
+	}
 	d.src, err = battery.New(battery.Config{
-		Addr:      cfg.Battery.Addr,
-		Namespace: cfg.Battery.Namespace,
-		TLS:       cfg.Battery.TLS,
-		Logger:    l,
-		Execer:    d.execer,
+		Addr:           cfg.Battery.Addr,
+		Namespace:      cfg.Battery.Namespace,
+		TLS:            cfg.Battery.TLS,
+		BasicAuthToken: string(cfg.Battery.Token.Value()),
+		Logger:         l,
+		Execer:         d.execer,
 	})
 	if err != nil {
 		return fmt.Errorf("startup: battery: %w", err)

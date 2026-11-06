@@ -29,6 +29,40 @@ func TestReadyAfterStartup(t *testing.T) {
 	if n := f.Pool.CallCount("ListLeases"); n < 1 {
 		t.Fatalf("ListLeases calls = %d, want at least 1", n)
 	}
+	if logs := r.logs.String(); strings.Contains(logs, plaintextTokenWarning) {
+		t.Fatalf("logs warn about a battery token that is not set:\n%s", logs)
+	}
+}
+
+const plaintextTokenWarning = "battery token is sent in plaintext"
+
+func TestBatteryTokenSent(t *testing.T) {
+	f := newFakes(t)
+	f.Pool.RequireBasicAuth("s3cret")
+	r := f.start(t, startOptions{options: func(o *daemon.Options) {
+		o.Config.Battery.Token = configSecret("s3cret")
+	}})
+	r.waitReady()
+	logs := r.logs.String()
+	if !strings.Contains(logs, "level=WARN") || !strings.Contains(logs, plaintextTokenWarning) {
+		t.Fatalf("logs have no WARN about the plaintext battery token:\n%s", logs)
+	}
+	if strings.Contains(logs, "s3cret") {
+		t.Fatalf("logs contain the battery token:\n%s", logs)
+	}
+}
+
+func TestBatteryWrongTokenFailsStartup(t *testing.T) {
+	f := newFakes(t)
+	f.Pool.RequireBasicAuth("s3cret")
+	r := f.start(t, startOptions{options: func(o *daemon.Options) {
+		o.Config.Battery.Token = configSecret("wrong")
+	}})
+	err := r.mustReturn(10 * time.Second)
+	if err == nil || !strings.Contains(err.Error(), "startup: config check: battery hosts: ") ||
+		!strings.Contains(strings.ToLower(err.Error()), "unauthenticated") {
+		t.Fatalf("Run = %v, want a startup config check error naming battery hosts and unauthenticated", err)
+	}
 }
 
 func TestQueuedDeliveryReachesDemand(t *testing.T) {
