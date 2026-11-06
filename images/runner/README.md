@@ -19,6 +19,12 @@ The script builds the image for `ARCH` (default `amd64`) and tags it locally as
 `ghcr.io/liquidmetal-dev/muster-runner:minimal-latest`. It does not push. The runner version
 and its sha256 values are the `ARG` defaults in `minimal/Dockerfile`.
 
+## Publish
+
+Run the Images workflow by hand on `main` (`gh workflow run images.yml --ref main`). After the
+tests pass, the `publish minimal (amd64)` job builds `minimal` again and pushes both tags to
+GHCR. A run from any other ref skips the publish job. The `e2e` variant is never published.
+
 The `e2e` variant builds on the local `minimal-latest` image, so build `minimal` first. Its
 `run.sh` decodes the fake GitHub's JIT configuration, sleeps for `sleep_seconds` and exits
 with `exit_code`. It takes the runner version of `minimal/Dockerfile` for its tag.
