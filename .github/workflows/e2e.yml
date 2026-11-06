@@ -1,0 +1,113 @@
+name: E2E
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  # GitHub takes this trigger from the default branch's copy of the workflow.
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  comment:
+    name: /run-e2e
+    if: >-
+      github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/run-e2e') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+      issues: write
+      statuses: write
+    outputs:
+      sha: ${{ steps.head.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.issue.number }}
+      COMMENT_ID: ${{ github.event.comment.id }}
+    steps:
+      - name: React to the comment
+        run: gh api -X POST "repos/$REPO/issues/comments/$COMMENT_ID/reactions" -f content=eyes >/dev/null
+      # The SHA is fixed here, so a push after the comment does not change what runs.
+      - name: Resolve the head commit
+        id: head
+        run: echo "sha=$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)" >>"$GITHUB_OUTPUT"
+      - name: Set a pending status
+        env:
+          SHA: ${{ steps.head.outputs.sha }}
+        run: >-
+          gh api -X POST "repos/$REPO/statuses/$SHA" -f state=pending -f context="e2e (comment)"
+          -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+
+  e2e:
+    name: e2e
+    needs: [comment]
+    if: >-
+      always() && (
+        github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run/e2e')) ||
+        (github.event_name == 'issue_comment' && needs.comment.result == 'success'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    # On the job, not the workflow: every comment on any issue starts the workflow, and those
+    # runs must not cancel a running suite.
+    concurrency:
+      group: e2e-${{ github.event.issue.number || github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.comment.outputs.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      # The runner image builds and the thin-pool need more disk than the runner leaves free.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Provision the host
+        run: sudo env "PATH=$PATH" hack/e2e/provision.sh
+      - name: Run the e2e suite
+        # Root runs go in a checkout that the runner user owns, so git refuses the VCS stamp.
+        run: >-
+          sudo env "PATH=$PATH" GOFLAGS=-buildvcs=false E2E_REQUIRED=1
+          "E2E_LOG_DIR=$RUNNER_TEMP/e2e-logs"
+          go test -tags e2e -timeout 30m -count=1 -v ./test/e2e
+      - name: Make the daemon logs readable
+        if: failure()
+        run: sudo chmod -R a+rX "$RUNNER_TEMP/e2e-logs"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-logs
+          path: ${{ runner.temp }}/e2e-logs
+      - name: Clean up
+        if: always()
+        run: sudo hack/e2e/cleanup.sh
+
+  comment-result:
+    name: /run-e2e result
+    needs: [comment, e2e]
+    if: always() && needs.comment.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ needs.comment.outputs.sha }}
+      STATE: ${{ needs.e2e.result == 'success' && 'success' || 'failure' }}
+    steps:
+      - name: Set the final status
+        run: >-
+          gh api -X POST "repos/$REPO/statuses/$SHA" -f state="$STATE" -f context="e2e (comment)"
+          -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null

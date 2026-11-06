@@ -10,7 +10,9 @@ dir="$here/$variant"
 [ -f "$dir/Dockerfile" ] || { echo "build.sh: no Dockerfile for variant $variant" >&2; exit 2; }
 
 arch="${ARCH:-amd64}"
-runner_version="${RUNNER_VERSION:-$(dockerfile_runner_version "$dir/Dockerfile")}"
+# A variant built on minimal has no runner pin of its own.
+pinned="$(dockerfile_runner_version "$dir/Dockerfile")"
+runner_version="${RUNNER_VERSION:-${pinned:-$(dockerfile_runner_version "$here/minimal/Dockerfile")}}"
 repo=ghcr.io/liquidmetal-dev/muster-runner
 tag="$repo:$variant-24.04-$runner_version"
 

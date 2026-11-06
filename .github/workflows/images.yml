@@ -17,8 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
-      - run: mise exec -- shellcheck images/runner/*.sh images/runner/smoke/*.sh images/runner/minimal/muster-runner
+      - run: mise exec -- shellcheck images/runner/*.sh images/runner/smoke/*.sh images/runner/minimal/muster-runner images/runner/e2e/run.sh
       - run: bash images/runner/build.sh minimal
       - run: bash images/runner/smoke/image-test.sh
       - run: bash images/runner/smoke/entrypoint-test.sh
       - run: bash images/runner/smoke.sh container
+      - run: bash images/runner/build.sh e2e
+      - run: bash images/runner/smoke/e2e-stub-test.sh
