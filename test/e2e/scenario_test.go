@@ -141,7 +141,12 @@ func newScenario(t *testing.T, opts scenarioOpts) *scenario {
 		},
 		"battery":   map[string]any{"addr": infra.batteryAddr, "tls": map[string]any{"insecure": true}, "namespace": s.Namespace},
 		"flintlock": map[string]any{"tls": map[string]any{"insecure": true}},
-		"defaults":  map[string]any{"start_timeout": "2m", "idle_timeout": "1m", "claim_deadline": "3m"},
+		// The long heartbeat expiry keeps battery from expiring a lease that musterd should
+		// release, so a scenario sees musterd's release and not the expiry.
+		"defaults": map[string]any{
+			"start_timeout": "2m", "idle_timeout": "1m", "claim_deadline": "3m",
+			"heartbeat_interval": "30s", "heartbeat_expiry_threshold": "5m",
+		},
 		"pools": []any{map[string]any{
 			"name":            s.Pool,
 			"scope":           map[string]any{"repo": s.Repo},
