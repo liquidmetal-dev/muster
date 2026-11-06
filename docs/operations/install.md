@@ -8,11 +8,14 @@ reads `/etc/muster/musterd.json`. It does not start until that file exists. The
 
 1. Download `musterd` (and `musterctl` if you want it on the host) for your architecture
    from the GitHub release. Compare each file with `checksums.txt`.
-2. Install the packages:
+   In v0.1.0, `musterctl` only prints its version. Its commands come with the gRPC API
+   ([#23](https://github.com/liquidmetal-dev/muster/issues/23)).
+2. Install the packages. Set `VERSION` to the release that you downloaded, without the `v`:
 
    ```sh
-   sudo apt install ./musterd_0.3.0_amd64.deb ./musterctl_0.3.0_amd64.deb   # Debian, Ubuntu
-   sudo dnf install ./musterd-0.3.0-1.x86_64.rpm ./musterctl-0.3.0-1.x86_64.rpm   # Fedora, RHEL
+   VERSION=0.1.0   # the release that you install
+   sudo apt install ./musterd_${VERSION}_amd64.deb ./musterctl_${VERSION}_amd64.deb   # Debian, Ubuntu
+   sudo dnf install ./musterd-${VERSION}-1.x86_64.rpm ./musterctl-${VERSION}-1.x86_64.rpm   # Fedora, RHEL
    ```
 
    The package creates the user `muster` and an empty `/etc/muster` (mode 0750, `root:muster`).
@@ -60,10 +63,11 @@ The image `ghcr.io/liquidmetal-dev/musterd` runs musterd as UID 65532. Mount the
 configuration and the secrets read-only, and make sure that UID 65532 can read them:
 
 ```sh
+VERSION=0.1.0   # the release that you install
 docker run -d --name musterd \
   -v /srv/muster:/etc/muster:ro \
   -p 8443:8443 -p 9443:9443 -p 9090:9090 \
-  ghcr.io/liquidmetal-dev/musterd:0.3.0
+  ghcr.io/liquidmetal-dev/musterd:${VERSION}
 ```
 
 ## Unit hardening
