@@ -115,6 +115,13 @@ type Battery struct {
 	Namespace string `json:"namespace,omitempty"`
 	// TLS absent means TLS with the system CA pool.
 	TLS tlsconfig.Client `json:"tls"`
+	// TokenFile and TokenEnv are the two sources of poolmgrd's
+	// basic_auth_token. At most one is set.
+	TokenFile string `json:"token_file,omitempty"`
+	TokenEnv  string `json:"token_env,omitempty"`
+
+	// Token is resolved by Load.
+	Token Secret `json:"-"`
 }
 
 // Flintlock holds the TLS settings for flintlock hosts.
