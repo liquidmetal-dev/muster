@@ -59,9 +59,14 @@ printf 'wh' >/etc/muster/webhook.secret
 chown root:muster /etc/muster/musterd.json /etc/muster/app.pem /etc/muster/webhook.secret
 chmod 0640 /etc/muster/musterd.json /etc/muster/app.pem /etc/muster/webhook.secret
 
-want="musterd: configuration loaded from /etc/muster/musterd.json (1 pools)"
-got="$(setpriv --reuid=muster --regid=muster --init-groups /usr/bin/musterd)" || fail "musterd as muster: $got"
-[ "$got" = "$want" ] || fail "musterd as muster printed: $got"
+# No GitHub or battery is reachable here, so startup fails with exit code 1
+# after the configuration loads. An unreadable configuration exits with 2.
+code=0
+got="$(timeout 120 setpriv --reuid=muster --regid=muster --init-groups /usr/bin/musterd 2>&1)" || code=$?
+[ "$code" -eq 1 ] || fail "musterd as muster exited with $code: $got"
+grep -q '"msg":"configuration loaded","path":"/etc/muster/musterd.json","pools":1' <<<"$got" ||
+	fail "musterd as muster did not load the configuration: $got"
+grep -q '^musterd: startup: ' <<<"$got" || fail "musterd as muster did not fail at startup: $got"
 
 before="$(stat -c '%a %U %G %Y' /etc/muster/musterd.json) $(sha256sum </etc/muster/musterd.json)"
 reinstall_pkgs
