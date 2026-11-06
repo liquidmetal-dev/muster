@@ -357,6 +357,19 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 	}
 }
 
+// holds checks every 500ms for d that check returns nil, and fails with its error otherwise.
+func holds(t *testing.T, d time.Duration, what string, check func() error) {
+	t.Helper()
+	for deadline := time.Now().Add(d); time.Now().Before(deadline); time.Sleep(500 * time.Millisecond) {
+		if err := unexpectedExit(); err != nil {
+			t.Fatalf("checking %s: %v", what, err)
+		}
+		if err := check(); err != nil {
+			t.Fatalf("%s stopped holding: %v\n%s", what, err, logTails())
+		}
+	}
+}
+
 // poll is waitFor without the test failure, for teardown.
 func poll(timeout time.Duration, cond func() bool) bool {
 	for deadline := time.Now().Add(timeout); time.Now().Before(deadline); time.Sleep(500 * time.Millisecond) {
