@@ -4,10 +4,6 @@ This page takes you from an empty host to one GitHub Actions job in a muster mic
 one flintlock host, one battery, one GitHub repository and a GitHub App, and it links to the
 other pages for the details.
 
-> **Status:** musterd startup arrives with
-> [#38](https://github.com/liquidmetal-dev/muster/issues/38). Until then, `musterd` checks the
-> configuration and exits, so step 8 cannot run a job yet.
-
 ## 1. What you need
 
 - A Linux host with KVM (`/dev/kvm`) for flintlock and Firecracker.
@@ -211,7 +207,7 @@ a new warm VM.
 ## Next
 
 - [Configuration reference](configuration.md): every field.
-- [Upgrade](operations/upgrade.md): `musterctl drain --wait`, then a restart.
+- [Upgrade](operations/upgrade.md): stop musterd, replace it, start it.
 - [Observability](operations/observability.md): logs, metrics and health checks.
 - [Manual end-to-end runbook](runbooks/e2e-manual-verification.md): check a host from end to
   end.

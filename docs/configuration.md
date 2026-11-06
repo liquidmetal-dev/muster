@@ -203,10 +203,11 @@ Session timers. Each must be a positive duration.
 
 Each entry is one [pool](../GLOSSARY.md#pools). At startup, musterd creates or updates the
 battery pool for each entry in its namespace. A pool in the namespace that this list does not
-name is an orphan pool: musterd logs it and keeps it. It deletes an orphan pool only when
-pruning is on (the `--prune-pools` flag of the
-[design](design/2026-10-27-muster-design.md); musterd does not have the flag yet). A pool with
-leased VMs stays until a later start.
+name is an orphan pool: musterd logs it and keeps it. musterd deletes an orphan pool only when
+it starts with the `-prune-pools` flag, and the flag deletes every orphan pool in the
+namespace. A pool with leased VMs stays until a later start.
+[Removing a pool](operations/upgrade.md#removing-a-pool-or-changing-its-scope) gives the
+procedure.
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |

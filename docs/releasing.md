@@ -5,7 +5,7 @@ A release starts when a maintainer pushes a semver tag. The `Release` workflow
 
 ## What a tag publishes
 
-A tag such as `v0.3.0` publishes these artefacts:
+A tag such as `v0.1.0` publishes these artefacts:
 
 - `musterd` archives for linux/amd64 and linux/arm64. Each archive also holds the systemd unit,
   the sysusers file and the example configuration, for a manual install.
@@ -16,8 +16,8 @@ A tag such as `v0.3.0` publishes these artefacts:
 - A changelog with the groups "Features", "Bug fixes" and "Other". The changelog does not
   show `docs`, `test`, `ci` and `chore` commits, or merge commits.
 
-The image tags do not have the `v`: the tag `v0.3.0` gives `ghcr.io/liquidmetal-dev/musterd:0.3.0`
-and `:latest`. A prerelease tag, such as `v0.3.0-rc.1`, does not move `:latest`. The GitHub
+The image tags do not have the `v`: the tag `v0.1.0` gives `ghcr.io/liquidmetal-dev/musterd:0.1.0`
+and `:latest`. A prerelease tag, such as `v0.1.0-rc.1`, does not move `:latest`. The GitHub
 release for a prerelease tag is marked as a prerelease.
 
 The release does not sign the artefacts and does not attach an SBOM.
@@ -28,8 +28,8 @@ The release does not sign the artefacts and does not attach an SBOM.
 2. Tag the commit and push the tag:
 
    ```sh
-   git tag -s v0.3.0 -m v0.3.0
-   git push origin v0.3.0
+   git tag -s v0.1.0 -m v0.1.0
+   git push origin v0.1.0
    ```
 
 3. Wait for the `Release` workflow. Its last step makes sure that the image has both
