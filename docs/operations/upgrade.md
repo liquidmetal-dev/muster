@@ -44,8 +44,11 @@ own, because nothing sends it heartbeats.
    SIGTERM drains musterd, as [What SIGTERM does](#what-sigterm-does) describes: it starts no
    new session and waits for busy sessions for at most `shutdown_grace`. The `-t` value must be
    greater than `shutdown_grace`, because the default `docker stop` timeout is 10 seconds.
-2. Replace the binary, the package or the image.
-3. Start musterd. It adopts the sessions that are still in flight.
+2. Replace the binary or the package. For a container, remove it with `docker rm musterd`: a
+   container keeps the image that it was made from.
+3. Start musterd: `sudo systemctl start musterd`, or for a container, `docker run` with the new
+   image tag, as in [install.md](install.md#in-a-container). musterd adopts the sessions that
+   are still in flight.
 
 > From v0.2.0 ([#24](https://github.com/liquidmetal-dev/muster/issues/24)), `musterctl drain
 > --wait` stops new sessions and waits for the busy sessions before you stop musterd, with no
@@ -54,7 +57,8 @@ own, because nothing sends it heartbeats.
 ### Jobs queued during the upgrade
 
 musterd starts no session for a job that GitHub queues during the drain or while musterd is
-stopped. The intakes stop at SIGTERM, so a webhook delivery in that time fails. GitHub has no
+stopped. The intakes stop at SIGTERM. A webhook delivery in that time fails, or, if it arrives
+while the listener closes, musterd accepts it but makes no session. GitHub has no
 endpoint that lists queued jobs, so the next start does not find these jobs by itself.
 
 - With the polling intake on, the next start finds the queued jobs of the repositories in

@@ -143,8 +143,9 @@ before the log shows `runner busy`.
   busy session, because the log line also appears when no session is busy. If the stop took
   less than 10 seconds, the first job ended before the stop: do the scenario again.
 - During the stop, the log shows no new `runner online` line. On the **Advanced** page of the
-  GitHub App settings, the `queued` delivery of the second job failed, at a time before
-  `systemctl stop` returned. This proves that the second job was queued during the stop.
+  GitHub App settings, the `queued` delivery of the second job has a time before
+  `systemctl stop` returned. This proves that the second job was queued during the stop. The
+  delivery usually failed, but it can show a success if it arrived while the listener closed.
 - After the start and the redelivery, the second job gets a runner and completes with
   `success`.
 
