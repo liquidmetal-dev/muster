@@ -52,7 +52,7 @@ func TestReadyzFlipsOnBatteryOutage(t *testing.T) {
 	}
 	clk.Advance(health.DefaultInterval)
 	probedAt(t, r, t0.Add(health.DefaultInterval))
-	if code, b := readyz(t, r); code != http.StatusServiceUnavailable || b.Checks[1].OK {
+	if code, b := readyz(t, r); code != http.StatusServiceUnavailable || bodyStatus(t, b, "battery").OK {
 		t.Fatalf("readyz during outage = %d %+v, want 503", code, b)
 	}
 	clk.Advance(health.DefaultInterval)
@@ -73,7 +73,7 @@ func TestBatteryProbeStallTimesOut(t *testing.T) {
 		t.Fatalf("probe took %v, want under 2s", el)
 	}
 	_, sts := r.Ready()
-	if sts[1].OK || !strings.Contains(sts[1].Err, "deadline") {
-		t.Fatalf("status = %+v, want a deadline failure", sts[1])
+	if st := status(t, sts, "battery"); st.OK || !strings.Contains(st.Err, "deadline") {
+		t.Fatalf("status = %+v, want a deadline failure", st)
 	}
 }

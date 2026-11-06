@@ -50,8 +50,10 @@ func waitProbed(t *testing.T, r *health.Readiness, at time.Time) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		_, sts := r.Ready()
-		if sts[1].At.Equal(at) {
-			return
+		for _, st := range sts {
+			if st.Name == "battery" && st.At.Equal(at) {
+				return
+			}
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("probe did not run")

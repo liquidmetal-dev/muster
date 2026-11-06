@@ -1,15 +1,20 @@
-// Command musterd is the muster daemon. Today it loads and validates its
-// configuration and exits; later issues add the daemon itself.
+// Command musterd is the muster daemon. It loads its configuration and
+// runs the daemon until SIGTERM or SIGINT.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/liquidmetal-dev/muster/internal/config"
+	"github.com/liquidmetal-dev/muster/internal/daemon"
+	"github.com/liquidmetal-dev/muster/internal/logging"
 	"github.com/liquidmetal-dev/muster/internal/version"
 )
 
@@ -27,6 +32,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "print version and exit")
 	configPath := fs.String("config", defaultConfigPath, "path to the JSON configuration file")
+	prunePools := fs.Bool("prune-pools", false, "delete battery pools in muster's namespace that are not configured")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -45,7 +51,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		return 2
 	}
-	if _, err := fmt.Fprintf(stdout, "musterd: configuration loaded from %s (%d pools)\n", *configPath, len(cfg.Pools)); err != nil {
+	logger := logging.New(stderr, cfg.Log)
+	logger.Info("configuration loaded", "path", *configPath, "pools", len(cfg.Pools))
+
+	sig := make(chan os.Signal, 2)
+	signal.Notify(sig, syscall.SIGTERM, os.Interrupt)
+	defer signal.Stop(sig)
+	err = daemon.Run(context.Background(), daemon.Options{
+		Config:     cfg,
+		PrunePools: *prunePools,
+		Logger:     logger,
+		Signals:    sig,
+	})
+	if err != nil {
+		logger.Error("musterd stopped", "err", err)
 		_, _ = fmt.Fprintf(stderr, "musterd: %v\n", err)
 		return 1
 	}

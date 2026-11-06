@@ -23,11 +23,13 @@ const (
 	actionCompleted  = "completed"
 )
 
-// Runners receives the runner that GitHub reports for an in_progress job.
+// Runners receives the runner that GitHub reports for an in_progress or
+// completed job.
 // The call must not block, for the same reason as Demand.
 // *session.Registry satisfies it.
 type Runners interface {
 	JobStarted(runnerName string, jobID int64)
+	JobCompleted(runnerName string)
 }
 
 // Demand receives the jobs the handler accepts. The calls must not block,
@@ -146,7 +148,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case actionCompleted:
-		handOff = func() { h.demand.Completed(wj.GetID()) }
+		handOff = func() {
+			h.demand.Completed(wj.GetID())
+			if h.runners != nil && wj.GetRunnerName() != "" {
+				h.runners.JobCompleted(wj.GetRunnerName())
+			}
+		}
 	default:
 		log.Debug("webhook: action ignored")
 		h.reply(w, http.StatusOK, action, OutcomeIgnored)

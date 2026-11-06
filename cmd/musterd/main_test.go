@@ -2,11 +2,7 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
@@ -102,16 +98,6 @@ func writeFixture(t *testing.T, mutate func(m map[string]any)) string {
 	return p
 }
 
-func setSecrets(t *testing.T) {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("MUSTER_APP_KEY", string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})))
-	t.Setenv("MUSTER_WEBHOOK_SECRET", "wh")
-}
-
 func TestRunInvalidConfigNamesField(t *testing.T) {
 	path := writeFixture(t, func(m map[string]any) {
 		m["battery"].(map[string]any)["addr"] = ""
@@ -129,22 +115,5 @@ func TestRunInvalidConfigNamesField(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", out.String())
-	}
-}
-
-func TestRunValidConfig(t *testing.T) {
-	setSecrets(t)
-	path := writeFixture(t, nil)
-	var out, errb bytes.Buffer
-	code := run([]string{"-config", path}, &out, &errb)
-	if code != 0 {
-		t.Fatalf("exit code = %d, want 0; stderr: %s", code, errb.String())
-	}
-	want := "musterd: configuration loaded from " + path + " (1 pools)\n"
-	if out.String() != want {
-		t.Fatalf("stdout = %q, want %q", out.String(), want)
-	}
-	if errb.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", errb.String())
 	}
 }

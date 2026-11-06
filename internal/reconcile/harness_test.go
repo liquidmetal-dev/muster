@@ -197,9 +197,7 @@ func (e *env) startRegistry() {
 		})
 	}
 	e.t.Cleanup(e.stop)
-	waitFor(e.t, func() bool {
-		return !errors.Is(e.Registry.Create(context.Background(), "\x00probe"), session.ErrNotRunning)
-	})
+	<-e.Registry.Running()
 }
 
 func (e *env) config() reconcile.Config {
@@ -346,17 +344,6 @@ func (e *env) drive(step time.Duration, cond func() bool) {
 			e.t.Fatalf("condition not met by %v of manual time", e.Clock.Now().Sub(startTime))
 		}
 		e.Clock.Advance(step)
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-func waitFor(t *testing.T, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition not met within 10s")
-		}
 		time.Sleep(5 * time.Millisecond)
 	}
 }

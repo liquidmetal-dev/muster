@@ -111,8 +111,8 @@ when one of muster's leases names it.
 Session reconciliation deletes it.
 
 **Ready**:
-musterd has completed startup, and its latest battery and GitHub probes succeeded. A
-musterd that is alive is not necessarily ready.
+musterd has completed startup, has not begun shutdown, and its latest battery and GitHub
+probes succeeded. A musterd that is alive is not necessarily ready.
 _Avoid_: Healthy, up
 
 **Shutdown grace**:

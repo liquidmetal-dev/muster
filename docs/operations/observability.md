@@ -88,11 +88,12 @@ musterd serves two health endpoints on `metrics_addr`, next to `/metrics`
 - `GET /readyz` returns `200` when musterd is ready and `503` when it is not. Use it as a
   readiness probe.
 
-`/readyz` has three checks:
+`/readyz` has four checks:
 
 | Check | Passes when |
 | --- | --- |
 | `started` | musterd has completed startup: the configuration is loaded, pools and sessions are reconciled, and the intakes run. |
+| `stopping` | musterd has not begun shutdown. It fails from the first SIGTERM or SIGINT until musterd exits. |
 | `battery` | The latest battery `ListHosts` call succeeded. |
 | `github` | The latest GitHub credential check succeeded. |
 
@@ -106,6 +107,7 @@ The body names each check, its result and the time of the last check:
 ```json
 {"ready":false,"checks":[
   {"name":"started","ok":true},
+  {"name":"stopping","ok":true},
   {"name":"battery","ok":false,"error":"battery: ListHosts: unavailable","at":"2026-11-05T12:00:15Z"},
   {"name":"github","ok":true,"at":"2026-11-05T12:00:15Z"}
 ]}
