@@ -6,6 +6,7 @@ on:
     paths: ['images/**', '.github/workflows/images.yml']
   pull_request:
     paths: ['images/**', '.github/workflows/images.yml']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,3 +25,26 @@ jobs:
       - run: bash images/runner/smoke.sh container
       - run: bash images/runner/build.sh e2e
       - run: bash images/runner/smoke/e2e-stub-test.sh
+
+  publish-minimal-amd64:
+    name: publish minimal (amd64)
+    needs: minimal-amd64
+    # Restricted to main so a dispatch from a branch cannot move minimal-latest.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        run: |
+          tag="$(bash images/runner/build.sh minimal)"
+          bash images/runner/smoke/image-test.sh
+          docker push "$tag"
+          docker push ghcr.io/liquidmetal-dev/muster-runner:minimal-latest
