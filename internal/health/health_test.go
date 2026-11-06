@@ -61,6 +61,27 @@ func readyz(t *testing.T, r *health.Readiness) (int, readyBody) {
 	return rec.Code, b
 }
 
+// status returns the status of the named check.
+func status(t *testing.T, sts []health.Status, name string) health.Status {
+	t.Helper()
+	for _, s := range sts {
+		if s.Name == name {
+			return s
+		}
+	}
+	t.Fatalf("no %s check in %+v", name, sts)
+	return health.Status{}
+}
+
+func bodyStatus(t *testing.T, b readyBody, name string) health.Status {
+	t.Helper()
+	sts := make([]health.Status, len(b.Checks))
+	for i, c := range b.Checks {
+		sts[i] = health.Status{Name: c.Name, OK: c.OK, Err: c.Error}
+	}
+	return status(t, sts, name)
+}
+
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -124,7 +145,7 @@ func TestNotProbedYet(t *testing.T) {
 	if code != http.StatusServiceUnavailable || b.Ready {
 		t.Fatalf("readyz = %d %+v, want 503", code, b)
 	}
-	if b.Checks[2].Name != "battery" || b.Checks[2].Error != "not probed yet" {
+	if bodyStatus(t, b, "battery").Err != "not probed yet" {
 		t.Fatalf("checks = %+v", b.Checks)
 	}
 }
@@ -157,7 +178,7 @@ func TestFlipsOnFirstFailureAndBack(t *testing.T) {
 	clk.Advance(health.DefaultInterval)
 	probedAt(t, r, t0.Add(health.DefaultInterval))
 	code, body := readyz(t, r)
-	if code != http.StatusServiceUnavailable || body.Checks[2].Error != "battery down" {
+	if code != http.StatusServiceUnavailable || bodyStatus(t, body, "battery").Err != "battery down" {
 		t.Fatalf("after failure: %d %+v, want 503 with the error", code, body)
 	}
 	p.set(nil)
@@ -174,8 +195,8 @@ func TestProbeTimeoutCountsAsFailure(t *testing.T) {
 	r := run(t, health.Config{Clock: clk, Timeout: 50 * time.Millisecond, Probes: []health.Probe{{Name: "battery", Check: block}}})
 	probedAt(t, r, t0)
 	_, sts := r.Ready()
-	if sts[2].OK || !strings.Contains(sts[2].Err, "context deadline exceeded") {
-		t.Fatalf("status = %+v, want a deadline failure", sts[2])
+	if st := status(t, sts, "battery"); st.OK || !strings.Contains(st.Err, "context deadline exceeded") {
+		t.Fatalf("status = %+v, want a deadline failure", st)
 	}
 }
 
@@ -207,12 +228,12 @@ func TestMarkStoppingMakesNotReady(t *testing.T) {
 	probedAt(t, r, t0)
 	r.MarkStarted()
 	ready, sts := r.Ready()
-	if !ready || sts[1] != (health.Status{Name: health.CheckStopping, OK: true}) {
+	if !ready || status(t, sts, health.CheckStopping) != (health.Status{Name: health.CheckStopping, OK: true}) {
 		t.Fatalf("before MarkStopping: ready=%v statuses=%+v, want ready with stopping ok", ready, sts)
 	}
 	r.MarkStopping()
 	ready, sts = r.Ready()
-	if ready || sts[1] != (health.Status{Name: health.CheckStopping, Err: "shutdown has begun"}) {
+	if ready || status(t, sts, health.CheckStopping) != (health.Status{Name: health.CheckStopping, Err: "shutdown has begun"}) {
 		t.Fatalf("after MarkStopping: ready=%v statuses=%+v, want not ready with stopping failed", ready, sts)
 	}
 	if code, _ := readyz(t, r); code != http.StatusServiceUnavailable {
