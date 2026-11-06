@@ -30,8 +30,6 @@ import (
 	"github.com/liquidmetal-dev/muster/internal/vmsource/flintlock"
 )
 
-// shutdownTimeout bounds how long a listener waits for open requests at
-// shutdown.
 const shutdownTimeout = 5 * time.Second
 
 // Options configures Run.
@@ -67,6 +65,12 @@ type daemon struct {
 	metrics   *metrics.Metrics
 	ops       *server.Server
 	webhook   *server.Server
+
+	// stop ends at the first signal, force at the second. run ends at
+	// stop or when a listener fails; its cause is the listener error.
+	stop, force, run context.Context
+	stopPoller       func()
+	stopSessions     func()
 }
 
 // Run starts musterd and serves until the first signal, then drains. It
@@ -87,7 +91,8 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 	defer d.close()
-	return d.run(stop, force)
+	d.stop, d.force = stop, force
+	return d.serve()
 }
 
 func (d *daemon) build() error {
@@ -194,7 +199,6 @@ func (d *daemon) close() {
 	_ = d.execer.Close()
 }
 
-// group runs goroutines and waits for them.
 type group struct{ wg sync.WaitGroup }
 
 func (g *group) goCtx(ctx context.Context, fn func(context.Context)) (stop func()) {
@@ -215,13 +219,12 @@ func listenOn(given net.Listener, addr, name string) (net.Listener, error) {
 	return ln, nil
 }
 
-func (d *daemon) run(stop, force context.Context) error {
+func (d *daemon) serve() error {
 	var g group
 	defer g.wg.Wait()
-	// run ends at the first signal or when a listener fails; its cause is
-	// the listener error.
-	run, fail := context.WithCancelCause(stop)
+	run, fail := context.WithCancelCause(d.stop)
 	defer fail(nil)
+	d.run = run
 	serve := func(s *server.Server, ln net.Listener, name string) {
 		g.wg.Go(func() {
 			if err := s.Serve(ln); err != nil {
@@ -231,21 +234,20 @@ func (d *daemon) run(stop, force context.Context) error {
 	}
 	// The listeners and goroutines outlive stop, so they hang off a
 	// context that only Run's own exit cancels.
-	base := context.WithoutCancel(stop)
+	base := context.WithoutCancel(d.stop)
 
 	opsLn, err := listenOn(d.opts.OpsListener, d.cfg.MetricsAddr, "ops listener")
 	if err != nil {
 		return err
 	}
 	serve(d.ops, opsLn, "ops listener")
-	defer d.shutdownServer(force, d.ops)
-	stopProbes := g.goCtx(base, d.readiness.Run)
-	defer stopProbes()
+	defer d.shutdownServer(d.force, d.ops)
+	defer g.goCtx(base, d.readiness.Run)()
 
 	hc := pools.NewHostCheck(d.admin)
 	err = config.Check(run, d.cfg, github.Checker{Client: d.gh}, hc, flintlock.NewChecker(d.execer, hc.Resolve, d.log))
 	if err != nil {
-		return d.startupErr(stop, run, "config check", err)
+		return d.startupErr("config check", err)
 	}
 	res, err := pools.Reconcile(run, pools.Config{
 		Namespace: d.cfg.Battery.Namespace,
@@ -256,19 +258,16 @@ func (d *daemon) run(stop, force context.Context) error {
 		Logger:    d.log,
 	})
 	if err != nil {
-		return d.startupErr(stop, run, "pool reconciliation", err)
+		return d.startupErr("pool reconciliation", err)
 	}
 	d.log.Info("pools reconciled", "created", len(res.Created), "updated", len(res.Updated), "orphans", len(res.Orphans), "pruned", len(res.Pruned))
 
-	sessCtx, cancelSessions := context.WithCancel(base)
-	sessDone := make(chan struct{})
-	g.wg.Go(func() { defer close(sessDone); _ = d.sessions.Run(sessCtx) })
-	stopSessions := func() { cancelSessions(); <-sessDone }
+	d.stopSessions = g.goCtx(base, func(ctx context.Context) { _ = d.sessions.Run(ctx) })
+	defer d.stopSessions()
 	select {
 	case <-d.sessions.Running():
 	case <-run.Done():
-		stopSessions()
-		return failure(stop, run)
+		return d.failure()
 	}
 	if _, err := reconcile.Run(run, reconcile.Config{
 		Namespace: d.cfg.Battery.Namespace,
@@ -279,56 +278,53 @@ func (d *daemon) run(stop, force context.Context) error {
 		Metrics:   d.metrics,
 		Logger:    d.log,
 	}); err != nil {
-		stopSessions()
-		return d.startupErr(stop, run, "session reconciliation", err)
+		return d.startupErr("session reconciliation", err)
 	}
 
-	stopDispatch := g.goCtx(base, d.disp.Run)
-	defer stopDispatch()
-	stopPoller := g.goCtx(base, d.poller.Run)
-	defer stopPoller()
+	defer g.goCtx(base, d.disp.Run)()
+	d.stopPoller = g.goCtx(base, d.poller.Run)
+	defer d.stopPoller()
 	if d.webhook != nil {
 		ln, err := listenOn(d.opts.WebhookListener, d.cfg.Listen.Addr, "webhook listener")
 		if err != nil {
-			stopSessions()
 			return err
 		}
 		serve(d.webhook, ln, "webhook listener")
 	}
 	if run.Err() != nil {
-		d.shutdown(force, stopPoller, stopSessions)
-		return failure(stop, run)
+		d.shutdown()
+		return d.failure()
 	}
 	d.readiness.MarkStarted()
 	d.log.Info("musterd ready")
 
 	<-run.Done()
-	runErr := failure(stop, run)
+	runErr := d.failure()
 	if runErr != nil {
 		d.log.Error("musterd stopping after a listener failed", "err", runErr)
 	} else {
 		d.log.Info("musterd stopping")
 	}
-	d.shutdown(force, stopPoller, stopSessions)
+	d.shutdown()
 	return runErr
 }
 
 // failure is the listener error that ended run, or nil when a signal did.
-func failure(stop, run context.Context) error {
-	if stop.Err() != nil || run.Err() == nil {
+func (d *daemon) failure() error {
+	if d.stop.Err() != nil || d.run.Err() == nil {
 		return nil
 	}
-	return context.Cause(run)
+	return context.Cause(d.run)
 }
 
-func (d *daemon) startupErr(stop, run context.Context, step string, err error) error {
-	if run.Err() != nil {
-		return failure(stop, run)
+func (d *daemon) startupErr(step string, err error) error {
+	if d.run.Err() != nil {
+		return d.failure()
 	}
 	return fmt.Errorf("startup: %s: %w", step, err)
 }
 
-func (d *daemon) shutdown(force context.Context, stopPoller, stopSessions func()) {
+func (d *daemon) shutdown() {
 	d.readiness.MarkStopping()
 	// Drain before the intakes stop: a webhook request still open hands
 	// off its job while the listener shuts down.
@@ -339,16 +335,16 @@ func (d *daemon) shutdown(force context.Context, stopPoller, stopSessions func()
 	var intakes sync.WaitGroup
 	intakes.Go(func() {
 		if d.webhook != nil {
-			ctx, cancel := context.WithTimeout(force, grace)
+			ctx, cancel := context.WithTimeout(d.force, grace)
 			defer cancel()
 			d.shutdownServer(ctx, d.webhook)
 		}
-		stopPoller()
+		d.stopPoller()
 	})
-	reconcile.Shutdown(force, reconcile.ShutdownConfig{
+	reconcile.Shutdown(d.force, reconcile.ShutdownConfig{
 		Dispatcher: d.disp,
 		Sessions:   d.sessions,
-		Stop:       stopSessions,
+		Stop:       d.stopSessions,
 		Grace:      grace,
 		Logger:     d.log,
 	})
