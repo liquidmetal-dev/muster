@@ -49,7 +49,13 @@ lines of the musterd and flintlockd logs.
 
 - every night;
 - on `workflow_dispatch`;
-- on pull requests that have the label `run/e2e`.
+- on pull requests that have the label `run/e2e`;
+- on a pull request comment that starts with `/run-e2e`, from someone with write access.
+
+A `/run-e2e` comment gets an 👀 reaction. The run tests the head commit of the pull request at
+the time of the comment, and sets the commit status `e2e (comment)` on that commit. GitHub
+reads the comment trigger from the workflow on the default branch, so a change to it takes
+effect only after it merges.
 
 When the job fails, it uploads the daemon logs as the artifact `e2e-logs`.
 
