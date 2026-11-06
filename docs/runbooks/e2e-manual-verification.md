@@ -5,13 +5,6 @@ repository. The unit tests use fakes. The [e2e suite](e2e-suite.md) runs the rea
 battery with the fake GitHub. This runbook is the check that the parts work together with
 the real GitHub. Each scenario has its steps, the expected result and a box to tick.
 
-## Status of this runbook
-
-- musterd startup arrives with [#38](https://github.com/liquidmetal-dev/muster/issues/38).
-  Until then, no scenario can run.
-- `musterctl drain` arrives with [#24](https://github.com/liquidmetal-dev/muster/issues/24).
-  Until then, scenario 3 cannot run.
-
 ## Prerequisites
 
 - The [quick start](../quick-start.md), done: a flintlock host registered in battery as
@@ -120,28 +113,35 @@ jobs:
 
 - [ ] Pass
 
-## 3. Drain, then upgrade
+## 3. Drain on stop, then upgrade
 
-**Purpose:** the upgrade procedure in [upgrade](../operations/upgrade.md) starts no new
-session during the drain, and keeps the jobs that run. Needs
-[#24](https://github.com/liquidmetal-dev/muster/issues/24).
+**Purpose:** the [upgrade procedure](../operations/upgrade.md#upgrade-procedure) keeps a busy
+job that ends within `shutdown_grace`, and starts no new session during the stop.
 
-1. Start a job that runs for 2 minutes: `gh workflow run muster-e2e.yml -R "$REPO" -f sleep=120`.
-2. When the log shows `runner busy`, start the drain in a second shell:
-
-   ```sh
-   musterctl drain --wait
-   ```
-
-3. While the drain waits, start a second job: `gh workflow run muster-e2e.yml -R "$REPO"`.
-4. When `musterctl drain --wait` returns, restart musterd: `sudo systemctl restart musterd`.
+1. Start a job that runs for 25 seconds, which is shorter than the default `shutdown_grace` of
+   30 seconds: `gh workflow run muster-e2e.yml -R "$REPO" -f sleep=25`.
+2. As soon as the log shows `runner busy`, stop musterd and time the stop:
+   `time sudo systemctl stop musterd`.
+3. While the stop waits, start a second job: `gh workflow run muster-e2e.yml -R "$REPO"`.
+4. When `systemctl stop` returns, replace the binary or the package with the build under test.
+   Then start musterd: `sudo systemctl start musterd`.
+5. In the GitHub App settings, on the **Advanced** page, redeliver the `workflow_job` delivery
+   with the action `queued` for the second job. Skip this step if the polling intake is on
+   ([jobs queued during the upgrade](../operations/upgrade.md#jobs-queued-during-the-upgrade)).
 
 **Expected:**
 
-- The first job completes with `success` while the drain waits.
-- The second job stays queued during the drain: the log shows no new `runner online` line.
-- `musterctl drain --wait` returns after the first session ends.
-- After the restart, the second job gets a runner and completes with `success`.
+- The first job completes with `success`. The log shows `shutdown: busy sessions finished`
+  before musterd exits.
+- `time` shows that the stop took more than 10 seconds. This proves that musterd waited for a
+  busy session, because the log line also appears when no session is busy. If the stop took
+  less than 10 seconds, the first job ended before the stop: do the scenario again.
+- During the stop, the log shows no new `runner online` line.
+- After the start and the redelivery, the second job gets a runner and completes with
+  `success`.
+
+> From v0.2.0 ([#24](https://github.com/liquidmetal-dev/muster/issues/24)), a variant of this
+> scenario runs `musterctl drain --wait` before the stop.
 
 - [ ] Pass
 
@@ -241,6 +241,43 @@ online without a job.
   ([observability](../operations/observability.md#logs)).
 
 Change the configuration back after the check.
+
+- [ ] Pass
+
+## 5. Remove a pool
+
+**Purpose:** the
+[pool removal procedure](../operations/upgrade.md#removing-a-pool-or-changing-its-scope) works
+with the v0.1.0 binaries.
+
+1. In `/etc/muster/musterd.json`, add a copy of the `quick-start` pool entry, so that it keeps
+   the `flintlock_hosts` and the `microvm_template`. Set its name to `e2e-remove`, its labels
+   to `self-hosted` and `muster-remove`, and its `size` to 1. Then
+   `sudo systemctl restart musterd`.
+2. Add a workflow `muster-e2e-remove.yml` to the test repository: a copy of `muster-e2e.yml`
+   with the name `muster-e2e-remove` and `runs-on: [self-hosted, muster-remove]`. Run it once:
+   `gh workflow run muster-e2e-remove.yml -R "$REPO"`. The job completes with `success`.
+3. Remove `muster-e2e-remove.yml` from the test repository. This moves the workflows off the
+   pool's labels.
+4. Wait until every `state` of the pool shows 0:
+
+   ```sh
+   curl -s localhost:9090/metrics | grep 'muster_sessions{pool="e2e-remove"'
+   ```
+
+5. Stop musterd with `sudo systemctl stop musterd`. Then check that battery has no lease of the
+   pool: `poolmgrctl lease list --pool e2e-remove --namespace "$NS"`.
+6. Remove the `e2e-remove` entry from `/etc/muster/musterd.json`.
+7. Start musterd once with `-prune-pools`, with the `prune-pools.conf` drop-in file of the
+   procedure. Then remove the file and run `sudo systemctl daemon-reload`.
+
+**Expected:**
+
+- The log shows `orphan pool pruned` with `pool=e2e-remove`.
+- `poolmgrctl pool get --name e2e-remove --namespace "$NS"` reports that the pool does not
+  exist.
+- `systemctl cat musterd` shows no `prune-pools.conf` after you remove it.
+- `runners` lists no `muster-$NS-e2e-remove-` runner.
 
 - [ ] Pass
 
