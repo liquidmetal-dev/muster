@@ -55,7 +55,8 @@ RUN groupadd --gid 1000 runner && \
     useradd --uid 1000 --gid 1000 --groups docker --create-home --shell /bin/bash runner && \
     chown -R runner:runner /opt/actions-runner && \
     systemctl enable guest-agent docker containerd systemd-networkd systemd-resolved && \
-    truncate -s 0 /etc/machine-id
+    truncate -s 0 /etc/machine-id && \
+    ln -sf /etc/machine-id /var/lib/dbus/machine-id
 
 COPY rootfs/ /
 

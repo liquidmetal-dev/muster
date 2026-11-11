@@ -49,6 +49,14 @@ result dockerd $? "docker is $(systemctl is-active docker), cgroup version '$cgr
 systemctl is-active --quiet containerd
 result containerd $? "containerd is $(systemctl is-active containerd)"
 
+# systemd fills an empty /etc/machine-id from this file at boot. A copy baked into the image
+# gives every VM the same machine-id, and so the same MAC from MACAddressPolicy=persistent.
+if [ "$(readlink /var/lib/dbus/machine-id)" = /etc/machine-id ]; then
+  result dbus_machine_id 0
+else
+  result dbus_machine_id 1 "/var/lib/dbus/machine-id is not a link to /etc/machine-id"
+fi
+
 out="$(/usr/local/bin/muster-runner --check 2>&1)"
 result muster_runner_check $? "$(echo "$out" | grep ^fail | tr '\n' ' ')"
 
